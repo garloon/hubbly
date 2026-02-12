@@ -766,25 +766,31 @@
             // Обработчик кликов
             const handleClick = (event) => {
                 const currentTime = Date.now();
-                if (currentTime - lastClickTime < clickDelay) return; // Игнорируем двойные клики
+                if (currentTime - lastClickTime < clickDelay) return;
                 lastClickTime = currentTime;
 
-                // Получаем координаты клика
+                // 1. Координаты мыши (нормализованные)
                 const rect = canvas.getBoundingClientRect();
                 const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-                // Создаём луч (ray) из камеры в точку клика
+                // 2. СОЗДАЁМ ЛУЧ ДЛЯ ОРТОГРАФИЧЕСКОЙ КАМЕРЫ
                 const raycaster = new THREE.Raycaster();
-                raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
 
-                // Проверяем пересечения с кликабельными объектами
+                // ВАЖНО: Для OrthographicCamera нужен особый подход
+                const mouseVector = new THREE.Vector3(x, y, 0);
+                const origin = camera.position.clone();
+                const direction = mouseVector.unproject(camera).sub(origin).normalize();
+
+                raycaster.set(origin, direction);
+                raycaster.far = 1000;
+
+                // 3. Проверяем пересечения
                 const intersects = raycaster.intersectObjects(clickableObjects);
 
                 if (intersects.length > 0) {
                     const userId = findAvatarData(intersects[0].object);
                     if (userId) {
-                        // Отправляем событие в MAUI
                         if (window.webkit?.messageHandlers?.hubbly3d) {
                             window.webkit.messageHandlers.hubbly3d.postMessage(JSON.stringify({
                                 type: 'avatar_clicked',
@@ -795,6 +801,7 @@
                     }
                 }
             };
+
 
             // Обработчики событий
             canvas.addEventListener('click', handleClick);
