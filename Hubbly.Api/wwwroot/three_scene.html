@@ -698,9 +698,8 @@
 
         function setupRaycaster() {
             const canvas = document.getElementById('renderCanvas');
-            clickableObjects = [];
+            const clickableObjects = [];
 
-            // Функция обновления списка кликабельных объектов
             function updateClickableObjects() {
                 clickableObjects.length = 0;
                 scene.traverse(obj => {
@@ -711,7 +710,6 @@
                 console.log(`🎯 Clickable objects: ${clickableObjects.length}`);
             }
 
-            // Функция поиска userId в иерархии
             function findAvatarData(obj) {
                 while (obj) {
                     if (obj.userData.avatarId) return obj.userData.avatarId;
@@ -725,7 +723,7 @@
             updateClickableObjects();
             setInterval(updateClickableObjects, 3000);
 
-            handleClick = (event) => {
+            window.handleClick = function (event) {
                 const currentTime = Date.now();
                 if (currentTime - lastClickTime < clickDelay) return;
                 lastClickTime = currentTime;
@@ -757,9 +755,8 @@
                 }
             };
 
-            canvas.addEventListener('click', handleClick);
+            canvas.addEventListener('click', window.handleClick);
 
-            // Поддержка тач-экранов
             canvas.addEventListener('touchend', (event) => {
                 if (event.touches.length === 0) {
                     const touch = event.changedTouches[0];
@@ -767,7 +764,7 @@
                         clientX: touch.clientX,
                         clientY: touch.clientY
                     });
-                    handleClick(mouseEvent);
+                    window.handleClick(mouseEvent);
                 }
             });
 

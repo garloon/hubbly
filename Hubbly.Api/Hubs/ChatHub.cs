@@ -258,30 +258,23 @@ public class ChatHub : Hub
     {
         var userId = Guid.Parse(Context.User!.FindFirst("userId")!.Value);
 
-        try
+        var room = await _roomService.GetRoomByUserIdAsync(userId);
+        if (room == null)
         {
-            var room = await _roomService.GetRoomByUserIdAsync(userId);
-            if (room == null)
-            {
-                await Clients.Caller.SendAsync("ReceiveError", "You are not in a room");
-                return;
-            }
-
-            var messageDto = await _chatService.SendMessageAsync(
-                userId,
-                $"[{animationType.ToUpper()}]",
-                animationType
-            );
-
-            await Clients.Group(room.Id.ToString()).SendAsync("ReceiveMessage", messageDto);
-
-            _logger.LogInformation("🎭 Animation {Animation} sent by user {UserId}", animationType, userId);
+            await Clients.Caller.SendAsync("ReceiveError", "You are not in a room");
+            return;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "SendAnimation error for user {UserId}", userId);
-            await Clients.Caller.SendAsync("ReceiveError", "Failed to send animation");
-        }
+        
+        await Clients.OthersInGroup(room.Id.ToString()).SendAsync("UserPlayAnimation",
+            userId.ToString(),
+            animationType);
+        
+        await Clients.Caller.SendAsync("UserPlayAnimation",
+            userId.ToString(),
+            animationType);
+
+        _logger.LogInformation("🎭 Animation {Animation} sent by user {UserId}",
+            animationType, userId);
     }
 
     public Task<int> GetOnlineCount()
