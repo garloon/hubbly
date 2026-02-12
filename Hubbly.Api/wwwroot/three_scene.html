@@ -62,33 +62,11 @@
             }
         }
 
-        /* Статус бар */
-        #statusBar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: rgba(0, 0, 0, 0.8);
-            color: #8b5cf6;
-            padding: 8px 16px;
-            font-size: 12px;
-            font-family: monospace;
-            display: flex;
-            justify-content: space-between;
-            z-index: 900;
-            border-top: 1px solid #334155;
-        }
     </style>
 </head>
 <body>
     <!-- Canvas для Three.js -->
     <canvas id="renderCanvas"></canvas>
-
-    <!-- Индикатор загрузки -->
-    <div id="loadingOverlay">
-        <div class="loadingSpinner"></div>
-        <div>Loading 3D Scene...</div>
-    </div>
 
     <script type="module">
         import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.121.1/build/three.module.js";
@@ -148,6 +126,8 @@
 
                 this.mesh = new THREE.Mesh(geometry, material);
                 this.mesh.userData.avatar = this;
+                this.mesh.userData.avatarId = this.userId;
+                this.mesh.userData.nickname = this.nickname;
                 this.mesh.name = `avatar_${this.userId}`;
 
                 const shadowGeometry = new THREE.CircleGeometry(0.6, 32);
@@ -194,6 +174,8 @@
                         this.mesh = newMesh;
                         this.mesh.position.copy(currentPosition);
                         this.mesh.userData.avatar = this;
+                        this.mesh.userData.avatarId = this.userId;
+                        this.mesh.userData.nickname = this.nickname;
 
                         // Создаем анимационный микшер
                         this.mixer = new THREE.AnimationMixer(this.mesh);
@@ -238,6 +220,8 @@
                         // Плавное появление модели
                         model.traverse((child) => {
                             if (child.isMesh && child.material) {
+                                child.castShadow = true;
+                                child.receiveShadow = true;
                                 child.material.transparent = true;
                                 child.material.opacity = 0;
                                 new TWEEN.Tween(child.material)
@@ -665,15 +649,11 @@
                 document.body.appendChild(statusBar);
             }
 
+            setupRaycaster();
+
             setTimeout(() => {
-                document.getElementById('loadingOverlay').style.display = 'none';
                 isInitialized = true;
                 console.log('✅ Three.js initialized successfully');
-
-                notifyMAUI('scene_ready', {
-                    threeVersion: THREE.REVISION,
-                    hasAnimations: true
-                });
             }, 1000);
         }
 
@@ -730,6 +710,50 @@
             console.log(`JS: Notified MAUI: ${type}`, data);
         }
 
+        function setupRaycaster() {
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+
+            canvas.addEventListener('click', (event) => {
+                // Нормализованные координаты мыши (-1 до 1)
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+
+                // Собираем все mesh аватаров
+                const avatars = [];
+                avatarManager.getAvatars().forEach(avatar => {
+                    if (avatar.mesh) avatars.push(avatar.mesh);
+                });
+
+                const intersects = raycaster.intersectObjects(avatars);
+
+                if (intersects.length > 0) {
+                    // Берём первый попавшийся объект
+                    const hit = intersects[0].object;
+
+                    // Поднимаемся до корня аватара
+                    let root = hit;
+                    while (root.parent && root.parent !== scene) {
+                        root = root.parent;
+                    }
+
+                    const userId = root.userData.avatar?.userId;
+                    if (userId) {
+                        // Отправляем событие в MAUI
+                        if (window.webkit && window.webkit.messageHandlers) {
+                            window.webkit.messageHandlers.hubbly3d.postMessage(JSON.stringify({
+                                type: 'avatar_clicked',
+                                userId: userId
+                            }));
+                        }
+                        console.log(`👆 Avatar clicked: ${userId}`);
+                    }
+                }
+            });
+        }
+
         window.hubbly3d = {
             isReady: function () {
                 return typeof THREE !== 'undefined' && scene && isInitialized;
@@ -778,22 +802,6 @@
             stopAllAnimations: function () {
                 if (!avatarManager) return 0;
                 return avatarManager.stopAllAnimations();
-            },
-            // Тестовые методы для отладки
-            testAddRandomAvatar: function () {
-                if (!avatarManager) return false;
-                const id = 'test_' + Date.now();
-                const gender = Math.random() > 0.5 ? 'male' : 'female';
-                const nickname = gender === 'male' ? 'TestMale' : 'TestFemale';
-                return this.addAvatar(id, nickname, gender);
-            },
-            testPlayClap: function () {
-                if (!avatarManager) return 0;
-                return this.playAllAnimation('clap');
-            },
-            testBackToIdle: function () {
-                if (!avatarManager) return 0;
-                return this.playAllAnimation('idle');
             }
         };
 
