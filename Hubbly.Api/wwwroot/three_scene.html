@@ -161,7 +161,7 @@
                 if (this.isLoaded) return;
 
                 const parent = this.mesh.parent;
-                const currentX = this.mesh.position.x;  // Сохраняем только X!
+                const currentX = this.mesh.position.x;
 
                 try {
                     const newMesh = await this.loadGLBModel();
@@ -175,8 +175,9 @@
 
                         this.mesh = newMesh;
 
-                        // ✅ НЕ копируем позицию! Ставим правильную для GLB
+                        // ✅ СНАЧАЛА ставим позицию
                         this.mesh.position.set(currentX, 0.2, 0);
+                        console.log(`[POSITION] После set:`, this.mesh.position.clone());
 
                         // ✅ Проставляем userData
                         this.mesh.userData.avatar = this;
@@ -189,8 +190,14 @@
                                 child.userData.avatarId = this.userId;
                                 child.userData.nickname = this.nickname;
                                 child.visible = true;
+
+                                // ✅ Логируем позиции детей
+                                console.log(`[CHILD] ${child.name || 'mesh'} position:`, child.position.clone());
                             }
                         });
+
+                        // ✅ ФИНАЛЬНАЯ ПОЗИЦИЯ
+                        console.log(`[FINAL] mesh position:`, this.mesh.position.clone());
 
                         this.mixer = new THREE.AnimationMixer(this.mesh);
 
@@ -710,7 +717,6 @@
                 scene.traverse(obj => {
                     if (obj.isMesh && obj.userData.avatarId) {
                         window.clickableObjects.push(obj);
-                        console.log(`📌 Avatar mesh: ${obj.userData.avatarId} at`, obj.position.clone());
                     }
                 });
             }
@@ -792,6 +798,81 @@
                     window.handleClick(mouseEvent);
                 }
             });
+
+            window.debugRaycast = function (x, y) {
+                if (!canvas) canvas = document.getElementById('renderCanvas');
+
+                const rect = canvas.getBoundingClientRect();
+                const mouse = new THREE.Vector2();
+                mouse.x = ((x - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((y - rect.top) / rect.height) * 2 + 1;
+
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(mouse, camera);
+                camera.updateMatrixWorld(true);
+
+                console.log('========== ДЕБАГ РЕЖИМ ==========');
+                console.log('1. Координаты мыши:', x, y);
+                console.log('2. Mouse normalized:', mouse.x, mouse.y);
+                console.log('3. Camera position:', camera.position.clone());
+                console.log('4. Camera matrix:', camera.matrixWorld.clone());
+                console.log('5. Ray origin:', raycaster.ray.origin.clone());
+                console.log('6. Ray direction:', raycaster.ray.direction.clone());
+
+                // Визуализация
+                const arrow = new THREE.ArrowHelper(
+                    raycaster.ray.direction,
+                    raycaster.ray.origin,
+                    10,
+                    0xff0000
+                );
+                scene.add(arrow);
+                setTimeout(() => scene.remove(arrow), 3000);
+
+                // Информация об аватарах
+                console.log('7. Всего аватаров:', avatarManager?.getAvatars().length);
+                window.clickableObjects.forEach((obj, i) => {
+                    const worldPos = obj.getWorldPosition(new THREE.Vector3());
+                    const box = new THREE.Box3().setFromObject(obj);
+                    console.log(`   Аватар ${i}:`, {
+                        id: obj.userData.avatarId,
+                        localPos: obj.position.clone(),
+                        worldPos: worldPos,
+                        boundingBox: box,
+                        bounds: {
+                            min: box.min.clone(),
+                            max: box.max.clone()
+                        }
+                    });
+                });
+
+                // Проверка пересечений
+                const intersects = raycaster.intersectObjects(window.clickableObjects, true);
+                console.log('8. Пересечений:', intersects.length);
+
+                if (intersects.length > 0) {
+                    console.log('9. Первое пересечение:', {
+                        distance: intersects[0].distance,
+                        point: intersects[0].point.clone(),
+                        object: intersects[0].object.userData.avatarId
+                    });
+                } else {
+                    // Проверяем пересечение с плоскостью на разных высотах
+                    [0, 0.2, 0.5, 1.1, 1.5, 2.0].forEach(y => {
+                        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -y);
+                        const point = new THREE.Vector3();
+                        if (raycaster.ray.intersectPlane(plane, point)) {
+                            console.log(`   Пересечение с плоскостью Y=${y}:`, point.clone());
+                        }
+                    });
+                }
+                console.log('================================');
+            };
+
+            // Для удобства - клик по координатам
+            window.clickAt = function (x, y) {
+                window.debugRaycast(x, y);
+            };
 
             console.log('✅ Raycaster setup complete');
         }
