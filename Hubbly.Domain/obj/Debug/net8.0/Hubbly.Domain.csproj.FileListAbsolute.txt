@@ -1,0 +1,11 @@
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\bin\Debug\net8.0\Hubbly.Domain.deps.json
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\bin\Debug\net8.0\Hubbly.Domain.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\bin\Debug\net8.0\Hubbly.Domain.pdb
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\obj\Debug\net8.0\Hubbly.Domain.GeneratedMSBuildEditorConfig.editorconfig
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\obj\Debug\net8.0\Hubbly.Domain.AssemblyInfoInputs.cache
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\obj\Debug\net8.0\Hubbly.Domain.AssemblyInfo.cs
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\obj\Debug\net8.0\Hubbly.Domain.csproj.CoreCompileInputs.cache
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\obj\Debug\net8.0\Hubbly.Domain.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\obj\Debug\net8.0\refint\Hubbly.Domain.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\obj\Debug\net8.0\Hubbly.Domain.pdb
+D:\VSProjects\Hubbly.Backend\Hubbly.Domain\obj\Debug\net8.0\ref\Hubbly.Domain.dll

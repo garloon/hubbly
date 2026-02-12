@@ -1,0 +1,820 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Hubbly 3D Avatars</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            touch-action: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000000;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+
+        /* Индикатор загрузки */
+        #loadingOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        .loadingSpinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #8b5cf6;
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Статус бар */
+        #statusBar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            color: #8b5cf6;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-family: monospace;
+            display: flex;
+            justify-content: space-between;
+            z-index: 900;
+            border-top: 1px solid #334155;
+        }
+    </style>
+</head>
+<body>
+    <!-- Canvas для Three.js -->
+    <canvas id="renderCanvas"></canvas>
+
+    <!-- Индикатор загрузки -->
+    <div id="loadingOverlay">
+        <div class="loadingSpinner"></div>
+        <div>Loading 3D Scene...</div>
+    </div>
+
+    <script type="module">
+        import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.121.1/build/three.module.js";
+        import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.121.1/examples/jsm/loaders/GLTFLoader.js";
+        import * as TWEEN from "https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@18.6.4/dist/tween.esm.js";
+
+        const CONFIG = {
+            SERVER_BASE_URL: "http://192.168.0.101:5000/",
+            SLOT_COUNT: 10,
+            SLOT_SPACING: 2.5,
+            CAMERA_HEIGHT: 2.5,
+            CAMERA_DISTANCE: 1.5,
+            SCROLL_SENSITIVITY: 0.005,
+            HIGHLIGHT_COLOR: 0x8b5cf6,
+            DEFAULT_COLOR: 0x3b82f6,
+            MODEL_SCALE: 1.5,
+            // Добавляем пути к анимациям
+            ANIMATIONS: {
+                idle: 'idle.glb',
+                clap: 'clapping.glb'
+            }
+        };
+
+        let scene, camera, renderer;
+        let avatarManager;
+        let cameraController;
+        let isInitialized = false;
+        let clock = new THREE.Clock(); // Добавляем часы для анимаций
+
+        class Avatar {
+            constructor(userId, nickname, gender, isCurrentUser = false) {
+                this.userId = userId;
+                this.nickname = nickname;
+                this.gender = gender;
+                this.isCurrentUser = isCurrentUser;
+                this.mesh = null;
+                this.mixer = null;          // Анимационный микшер
+                this.actions = new Map();   // Мап для действий анимаций
+                this.currentAction = null;  // Текущая анимация
+                this.animationClips = new Map(); // Загруженные анимационные клипы
+                this.slotIndex = -1;
+                this.isLoaded = false;
+                this.usingFallback = false;
+
+                this.createPlaceholder();
+            }
+
+            createPlaceholder() {
+                const geometry = new THREE.BoxGeometry(0.8, 1.8, 0.4);
+                const color = this.isCurrentUser ? CONFIG.HIGHLIGHT_COLOR : CONFIG.DEFAULT_COLOR;
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    shininess: 30,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                this.mesh = new THREE.Mesh(geometry, material);
+                this.mesh.userData.avatar = this;
+                this.mesh.name = `avatar_${this.userId}`;
+
+                const shadowGeometry = new THREE.CircleGeometry(0.6, 32);
+                const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.2 });
+                const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
+                shadow.rotation.x = -Math.PI / 2;
+                shadow.position.y = -0.9;
+                this.mesh.add(shadow);
+            }
+
+            disposeMesh(mesh) {
+                if (!mesh) return;
+                mesh.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                    if (child.texture) child.texture.dispose();
+                });
+            }
+
+            async loadModel() {
+                if (this.isLoaded) return;
+
+                const currentPosition = this.mesh.position.clone();
+                const parent = this.mesh.parent;
+
+                try {
+                    const newMesh = await this.loadGLBModel();
+                    this.usingFallback = false;
+
+                    console.log(`[MODEL] ✅ Loaded GLB model for ${this.nickname}`);
+
+                    if (newMesh) {
+                        if (this.mesh && parent) {
+                            parent.remove(this.mesh);
+                            this.disposeMesh(this.mesh);
+                        }
+
+                        this.mesh = newMesh;
+                        this.mesh.position.copy(currentPosition);
+                        this.mesh.userData.avatar = this;
+
+                        // Создаем анимационный микшер
+                        this.mixer = new THREE.AnimationMixer(this.mesh);
+
+                        if (parent) {
+                            parent.add(this.mesh);
+                        }
+
+                        // Загружаем и запускаем idle анимацию
+                        await this.loadAndPlayIdleAnimation();
+                    }
+
+                    this.isLoaded = true;
+
+                } catch (error) {
+                    console.error(`[FATAL MODEL] Failed to process model for ${this.nickname}:`, error);
+                    this.isLoaded = true;
+                }
+            }
+
+            loadGLBModel() {
+                return new Promise((resolve, reject) => {
+                    let modelPath;
+
+                    if (this.gender === 'male') {
+                        modelPath = `${CONFIG.SERVER_BASE_URL}avatars/male_base.glb`;
+                    } else if (this.gender === 'female') {
+                        modelPath = `${CONFIG.SERVER_BASE_URL}avatars/female_base.glb`;
+                    } else {
+                        return reject(new Error("Unknown gender specified."));
+                    }
+
+                    console.log(`[MODEL] Loading GLB from: ${modelPath}`);
+
+                    const loader = new GLTFLoader();
+
+                    const onLoad = (gltf) => {
+                        const model = gltf.scene;
+                        model.scale.set(CONFIG.MODEL_SCALE, CONFIG.MODEL_SCALE, CONFIG.MODEL_SCALE);
+                        model.name = `glb_avatar_${this.userId}`;
+
+                        // Плавное появление модели
+                        model.traverse((child) => {
+                            if (child.isMesh && child.material) {
+                                child.material.transparent = true;
+                                child.material.opacity = 0;
+                                new TWEEN.Tween(child.material)
+                                    .to({ opacity: 1 }, 500)
+                                    .delay(100)
+                                    .start();
+                            }
+                        });
+
+                        resolve(model);
+                    };
+
+                    const onError = (error) => {
+                        console.error('[MODEL] GLTFLoader ERROR:', error);
+                        reject(error);
+                    };
+
+                    loader.load(modelPath, onLoad, null, onError);
+                });
+            }
+
+            async loadAndPlayIdleAnimation() {
+                try {
+                    const idleAnimation = await this.loadAnimation('idle');
+
+                    if (idleAnimation) {
+                        // Сохраняем клип
+                        this.animationClips.set('idle', idleAnimation);
+
+                        // Создаем действие из анимации
+                        const action = this.mixer.clipAction(idleAnimation);
+                        this.actions.set('idle', action);
+
+                        // Автоматически запускаем idle анимацию
+                        this.playAnimation('idle', true, 0.5);
+
+                        console.log(`[ANIM] ✅ Idle animation loaded and playing for ${this.nickname}`);
+                    }
+                } catch (error) {
+                    console.warn(`[ANIM] Could not load idle animation for ${this.nickname}:`, error.message);
+                }
+            }
+
+            async loadAnimation(animationName) {
+                return new Promise((resolve, reject) => {
+                    let animationPath;
+
+                    // Формируем путь к анимации
+                    if (this.gender === 'male') {
+                        animationPath = `${CONFIG.SERVER_BASE_URL}animations/male_${CONFIG.ANIMATIONS[animationName]}`;
+                    } else if (this.gender === 'female') {
+                        animationPath = `${CONFIG.SERVER_BASE_URL}animations/female_${CONFIG.ANIMATIONS[animationName]}`;
+                    } else {
+                        return reject(new Error("Unknown gender for animation"));
+                    }
+
+                    console.log(`[ANIM] Loading animation "${animationName}" from: ${animationPath}`);
+
+                    const loader = new GLTFLoader();
+
+                    const onLoad = (gltf) => {
+                        if (gltf.animations && gltf.animations.length > 0) {
+                            const animation = gltf.animations[0];
+                            animation.name = animationName; // Переименовываем для удобства
+                            console.log(`[ANIM] Loaded "${animationName}" (${animation.duration.toFixed(2)}s)`);
+                            resolve(animation);
+                        } else {
+                            reject(new Error(`No animations found in ${animationPath}`));
+                        }
+                    };
+
+                    const onError = (error) => {
+                        console.error(`[ANIM] Failed to load animation "${animationName}":`, error);
+                        reject(error);
+                    };
+
+                    loader.load(animationPath, onLoad, null, onError);
+                });
+            }
+
+            async playAnimation(animationName, loop = true, fadeDuration = 0.3) {
+                // Если анимация еще не загружена, загружаем ее
+                if (!this.actions.has(animationName)) {
+                    try {
+                        const animationClip = await this.loadAnimation(animationName);
+                        if (animationClip) {
+                            this.animationClips.set(animationName, animationClip);
+                            const action = this.mixer.clipAction(animationClip);
+                            this.actions.set(animationName, action);
+                        }
+                    } catch (error) {
+                        console.warn(`[ANIM] Failed to load animation "${animationName}" for ${this.nickname}:`, error);
+                        return false;
+                    }
+                }
+
+                const action = this.actions.get(animationName);
+                if (!action) {
+                    console.warn(`[ANIM] Animation "${animationName}" not found for ${this.nickname}`);
+                    return false;
+                }
+
+                // Плавный переход между анимациями
+                if (this.currentAction) {
+                    this.currentAction.fadeOut(fadeDuration);
+                }
+
+                action.reset();
+                action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+                action.clampWhenFinished = true;
+                action.fadeIn(fadeDuration).play();
+
+                this.currentAction = action;
+
+                console.log(`[ANIM] Playing "${animationName}" for ${this.nickname}`);
+                return true;
+            }
+
+            stopAnimation(fadeDuration = 0.3) {
+                if (this.currentAction) {
+                    this.currentAction.fadeOut(fadeDuration);
+                    this.currentAction = null;
+                }
+            }
+
+            setSlot(index) {
+                this.slotIndex = index;
+                this.updatePosition();
+            }
+
+            updatePosition() {
+                if (this.slotIndex < 0 || !this.mesh) return;
+
+                const xPos = this.slotIndex * CONFIG.SLOT_SPACING;
+
+                if (this.mesh) {
+                    // Для анимированных моделей немного другая высота
+                    const yPos = this.isLoaded && !this.usingFallback ? 1.1 : 0.9;
+                    this.mesh.position.set(xPos, yPos, 0);
+                }
+            }
+
+            update(deltaTime) {
+                if (this.mixer) {
+                    this.mixer.update(deltaTime);
+                }
+            }
+
+            dispose() {
+                if (this.mixer) {
+                    this.mixer.stopAllAction();
+                    this.mixer = null;
+                }
+
+                this.actions.clear();
+                this.animationClips.clear();
+                this.currentAction = null;
+
+                if (this.mesh) {
+                    if (this.mesh.parent) {
+                        this.mesh.parent.remove(this.mesh);
+                    }
+                    this.disposeMesh(this.mesh);
+                }
+                this.mesh = null;
+            }
+        }
+
+        class AvatarManager {
+            constructor() {
+                this.avatars = new Map();
+                this.availableSlots = Array.from({ length: CONFIG.SLOT_COUNT }, (_, i) => i);
+            }
+
+            addAvatar(userId, nickname, gender, isCurrentUser = false) {
+                if (this.avatars.has(userId)) return false;
+                if (this.availableSlots.length === 0) {
+                    console.error('No available slots');
+                    return false;
+                }
+
+                const slotIndex = this.availableSlots.shift();
+                const avatar = new Avatar(userId, nickname, gender, isCurrentUser);
+                avatar.setSlot(slotIndex);
+
+                this.avatars.set(userId, avatar);
+                scene.add(avatar.mesh);
+
+                // Задержка для последовательной загрузки
+                setTimeout(() => {
+                    avatar.loadModel().then(() => {
+                        this.updateUI();
+                    });
+                }, 300 + (this.getAvatarCount() * 200));
+
+                this.updateUI();
+                return true;
+            }
+
+            removeAvatar(userId) {
+                const avatar = this.avatars.get(userId);
+                if (!avatar) return false;
+
+                this.availableSlots.push(avatar.slotIndex);
+                this.availableSlots.sort((a, b) => a - b);
+
+                avatar.dispose();
+                this.avatars.delete(userId);
+                this.updateUI();
+                return true;
+            }
+
+            getAvatarCount() {
+                return this.avatars.size;
+            }
+
+            getAvatar(userId) {
+                return this.avatars.get(userId);
+            }
+
+            getAvatars() {
+                return Array.from(this.avatars.values());
+            }
+
+            clearAll() {
+                for (const avatar of this.avatars.values()) {
+                    avatar.dispose();
+                }
+                this.avatars.clear();
+                this.availableSlots = Array.from({ length: CONFIG.SLOT_COUNT }, (_, i) => i);
+                this.updateUI();
+            }
+
+            updateAvatars(deltaTime) {
+                for (const avatar of this.avatars.values()) {
+                    avatar.update(deltaTime);
+                }
+            }
+
+            playAvatarAnimation(userId, animationName = 'idle', loop = true) {
+                const avatar = this.avatars.get(userId);
+                if (!avatar) {
+                    console.warn(`[ANIM] Avatar ${userId} not found`);
+                    return false;
+                }
+
+                return avatar.playAnimation(animationName, loop);
+            }
+
+            stopAvatarAnimation(userId) {
+                const avatar = this.avatars.get(userId);
+                if (!avatar) return false;
+
+                avatar.stopAnimation();
+                return true;
+            }
+
+            playAllAnimation(animationName = 'idle', loop = true) {
+                let successCount = 0;
+                for (const avatar of this.avatars.values()) {
+                    if (avatar.playAnimation(animationName, loop)) {
+                        successCount++;
+                    }
+                }
+                console.log(`[ANIM] Playing "${animationName}" for ${successCount} avatars`);
+                return successCount;
+            }
+
+            stopAllAnimations() {
+                let successCount = 0;
+                for (const avatar of this.avatars.values()) {
+                    avatar.stopAnimation();
+                    successCount++;
+                }
+                console.log(`[ANIM] Stopped animations for ${successCount} avatars`);
+                return successCount;
+            }
+
+            updateUI() {
+                const countElement = document.getElementById('avatarCount');
+                if (countElement) countElement.textContent = `👥 ${this.getAvatarCount()} online`;
+            }
+        }
+
+        class CameraController {
+            constructor(camera) {
+                this.camera = camera;
+                this.targetX = 0;
+                this.isDragging = false;
+                this.startX = 0;
+                this.currentX = 0;
+
+                this.setupCamera();
+                this.setupEventListeners();
+            }
+
+            setupCamera() {
+                const aspect = window.innerWidth / window.innerHeight;
+                const frustumSize = 3.5;
+                this.camera.left = -frustumSize * aspect / 2;
+                this.camera.right = frustumSize * aspect / 2;
+                this.camera.top = frustumSize / 2;
+                this.camera.bottom = -frustumSize / 2;
+                this.camera.near = 0.1;
+                this.camera.far = 1000;
+                this.camera.updateProjectionMatrix();
+
+                this.camera.position.set(0, CONFIG.CAMERA_HEIGHT, CONFIG.CAMERA_DISTANCE);
+                this.camera.lookAt(0, CONFIG.CAMERA_HEIGHT, 0);
+            }
+
+            setupEventListeners() {
+                const canvas = document.getElementById('renderCanvas');
+                canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
+                canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
+                canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
+                canvas.addEventListener('mouseleave', this.onMouseUp.bind(this));
+                canvas.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: false });
+                canvas.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
+                canvas.addEventListener('touchend', this.onTouchEnd.bind(this));
+                window.addEventListener('resize', this.onWindowResize.bind(this));
+            }
+
+            onMouseDown(event) {
+                event.preventDefault();
+                this.isDragging = true;
+                this.startX = event.clientX;
+                this.currentX = this.camera.position.x;
+            }
+
+            onMouseMove(event) {
+                if (!this.isDragging) return;
+                event.preventDefault();
+                const deltaX = event.clientX - this.startX;
+                this.targetX = this.currentX - deltaX * CONFIG.SCROLL_SENSITIVITY;
+                this.updateCameraPosition();
+            }
+
+            onMouseUp() {
+                if (!this.isDragging) return;
+                this.isDragging = false;
+                this.snapToNearestSlot();
+            }
+
+            onTouchStart(event) {
+                event.preventDefault();
+                if (event.touches.length === 1) {
+                    this.isDragging = true;
+                    this.startX = event.touches[0].clientX;
+                    this.currentX = this.camera.position.x;
+                }
+            }
+
+            onTouchMove(event) {
+                if (!this.isDragging || event.touches.length !== 1) return;
+                event.preventDefault();
+                const deltaX = event.touches[0].clientX - this.startX;
+                this.targetX = this.currentX - deltaX * CONFIG.SCROLL_SENSITIVITY;
+                this.updateCameraPosition();
+            }
+
+            onTouchEnd() {
+                this.isDragging = false;
+                this.snapToNearestSlot();
+            }
+
+            onWindowResize() {
+                this.setupCamera();
+                if (renderer) {
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                }
+            }
+
+            updateCameraPosition() {
+                const lerpFactor = 0.2;
+                const dx = this.targetX - this.camera.position.x;
+                this.camera.position.x += dx * lerpFactor;
+            }
+
+            snapToNearestSlot() {
+                const targetSlot = Math.round(this.camera.position.x / CONFIG.SLOT_SPACING);
+                const maxSlots = Math.floor(CONFIG.SLOT_COUNT / 2);
+                const minSlot = -maxSlots;
+
+                this.targetX = Math.max(minSlot, Math.min(maxSlots, targetSlot)) * CONFIG.SLOT_SPACING;
+            }
+
+            update() {
+                if (!this.isDragging) {
+                    this.updateCameraPosition();
+                }
+            }
+        }
+
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+
+            camera = new THREE.OrthographicCamera();
+
+            const canvas = document.getElementById('renderCanvas');
+            renderer = new THREE.WebGLRenderer({
+                canvas: canvas,
+                antialias: true,
+                powerPreference: "high-performance"
+            });
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            setupLighting();
+            avatarManager = new AvatarManager();
+            cameraController = new CameraController(camera);
+
+            // Создаем элемент статус-бара если его нет
+            if (!document.getElementById('statusBar')) {
+                const statusBar = document.createElement('div');
+                statusBar.id = 'statusBar';
+                statusBar.innerHTML = `
+                            <div>Hubbly 3D Avatars</div>
+                            <div id="avatarCount">👥 0 online</div>
+                        `;
+                document.body.appendChild(statusBar);
+            }
+
+            setTimeout(() => {
+                document.getElementById('loadingOverlay').style.display = 'none';
+                isInitialized = true;
+                console.log('✅ Three.js initialized successfully');
+
+                notifyMAUI('scene_ready', {
+                    threeVersion: THREE.REVISION,
+                    hasAnimations: true
+                });
+            }, 1000);
+        }
+
+        function setupLighting() {
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 10, 7);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 50;
+            scene.add(directionalLight);
+
+            const planeGeometry = new THREE.PlaneGeometry(30, 30);
+            const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x111111, side: THREE.DoubleSide });
+            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -Math.PI / 2;
+            plane.position.y = -1.1;
+            plane.receiveShadow = true;
+            scene.add(plane);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            TWEEN.update();
+
+            const deltaTime = clock.getDelta();
+
+            if (avatarManager) {
+                avatarManager.updateAvatars(deltaTime);
+            }
+
+            if (cameraController) {
+                cameraController.update();
+            }
+
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        function notifyMAUI(type, data = {}) {
+            const message = JSON.stringify({ type, data });
+
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage(message);
+            }
+            else if (window.webkit && window.webkit.messageHandlers) {
+                window.webkit.messageHandlers.hubbly3d.postMessage(message);
+            }
+            console.log(`JS: Notified MAUI: ${type}`, data);
+        }
+
+        window.hubbly3d = {
+            isReady: function () {
+                return typeof THREE !== 'undefined' && scene && isInitialized;
+            },
+            addAvatar: function (userId, nickname, gender, isCurrentUser = false) {
+                if (!isInitialized || !avatarManager) {
+                    console.error('Cannot add avatar: scene not initialized');
+                    return false;
+                }
+                return avatarManager.addAvatar(userId, nickname, gender, isCurrentUser);
+            },
+            removeAvatar: function (userId) {
+                if (!isInitialized || !avatarManager) return false;
+                return avatarManager.removeAvatar(userId);
+            },
+            clearAvatars: function () {
+                if (!isInitialized || !avatarManager) return false;
+                avatarManager.clearAll();
+                return true;
+            },
+            getAvatarCount: function () {
+                if (!avatarManager) return 0;
+                return avatarManager.getAvatarCount();
+            },
+            getAvatars: function () {
+                if (!avatarManager) return [];
+                return avatarManager.getAvatars().map(a => ({
+                    userId: a.userId,
+                    nickname: a.nickname,
+                    gender: a.gender,
+                    isLoaded: a.isLoaded
+                }));
+            },
+            playAnimation: function (userId, animationName = 'idle', loop = true) {
+                if (!avatarManager) return false;
+                return avatarManager.playAvatarAnimation(userId, animationName, loop);
+            },
+            stopAnimation: function (userId) {
+                if (!avatarManager) return false;
+                return avatarManager.stopAvatarAnimation(userId);
+            },
+            playAllAnimation: function (animationName = 'idle', loop = true) {
+                if (!avatarManager) return 0;
+                return avatarManager.playAllAnimation(animationName, loop);
+            },
+            stopAllAnimations: function () {
+                if (!avatarManager) return 0;
+                return avatarManager.stopAllAnimations();
+            },
+            // Тестовые методы для отладки
+            testAddRandomAvatar: function () {
+                if (!avatarManager) return false;
+                const id = 'test_' + Date.now();
+                const gender = Math.random() > 0.5 ? 'male' : 'female';
+                const nickname = gender === 'male' ? 'TestMale' : 'TestFemale';
+                return this.addAvatar(id, nickname, gender);
+            },
+            testPlayClap: function () {
+                if (!avatarManager) return 0;
+                return this.playAllAnimation('clap');
+            },
+            testBackToIdle: function () {
+                if (!avatarManager) return 0;
+                return this.playAllAnimation('idle');
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', function () {
+            function isWebGLAvailable() {
+                try {
+                    const canvas = document.createElement('canvas');
+                    return !!(window.WebGLRenderingContext &&
+                        (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+                } catch (e) { return false; }
+            }
+
+            if (!isWebGLAvailable()) {
+                document.getElementById('loadingOverlay').innerHTML =
+                    '<div style="color: #ef4444; text-align: center; padding: 20px;">WebGL Not Supported</div>';
+                return;
+            }
+
+            initThreeJS();
+            animate();
+        });
+    </script>
+</body>
+</html>

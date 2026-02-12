@@ -1,0 +1,11 @@
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\bin\Debug\net8.0\Hubbly.Shared.deps.json
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\bin\Debug\net8.0\Hubbly.Shared.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\bin\Debug\net8.0\Hubbly.Shared.pdb
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\obj\Debug\net8.0\Hubbly.Shared.GeneratedMSBuildEditorConfig.editorconfig
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\obj\Debug\net8.0\Hubbly.Shared.AssemblyInfoInputs.cache
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\obj\Debug\net8.0\Hubbly.Shared.AssemblyInfo.cs
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\obj\Debug\net8.0\Hubbly.Shared.csproj.CoreCompileInputs.cache
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\obj\Debug\net8.0\Hubbly.Shared.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\obj\Debug\net8.0\refint\Hubbly.Shared.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\obj\Debug\net8.0\Hubbly.Shared.pdb
+D:\VSProjects\Hubbly.Backend\Hubbly.Shared\obj\Debug\net8.0\ref\Hubbly.Shared.dll

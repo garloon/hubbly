@@ -1,0 +1,155 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\VSProjects\\Hubbly.Backend\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{812BFC8E-0A31-469F-BD6E-211B5C290FD2}|Hubbly.Api\\Hubbly.Api.csproj|d:\\vsprojects\\hubbly.backend\\hubbly.api\\hubs\\chathub.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{812BFC8E-0A31-469F-BD6E-211B5C290FD2}|Hubbly.Api\\Hubbly.Api.csproj|solutionrelative:hubbly.api\\hubs\\chathub.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{AA9B903D-CA2C-478D-9889-9C81CC4A389D}|Hubbly.Domain\\Hubbly.Domain.csproj|d:\\vsprojects\\hubbly.backend\\hubbly.domain\\dtos\\signalrdtos.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{AA9B903D-CA2C-478D-9889-9C81CC4A389D}|Hubbly.Domain\\Hubbly.Domain.csproj|solutionrelative:hubbly.domain\\dtos\\signalrdtos.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A660BFBA-1B61-487B-A5CD-0B66CF2E2091}|Hubbly.Application\\Hubbly.Application.csproj|d:\\vsprojects\\hubbly.backend\\hubbly.application\\services\\authservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A660BFBA-1B61-487B-A5CD-0B66CF2E2091}|Hubbly.Application\\Hubbly.Application.csproj|solutionrelative:hubbly.application\\services\\authservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{AA9B903D-CA2C-478D-9889-9C81CC4A389D}|Hubbly.Domain\\Hubbly.Domain.csproj|d:\\vsprojects\\hubbly.backend\\hubbly.domain\\services\\irefreshtokenrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{AA9B903D-CA2C-478D-9889-9C81CC4A389D}|Hubbly.Domain\\Hubbly.Domain.csproj|solutionrelative:hubbly.domain\\services\\irefreshtokenrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{11A0F72F-B1D3-4540-A8E4-0CDED4FF2498}|Hubbly.Infrastructure\\Hubbly.Infrastructure.csproj|d:\\vsprojects\\hubbly.backend\\hubbly.infrastructure\\repositories\\refreshtokenrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{11A0F72F-B1D3-4540-A8E4-0CDED4FF2498}|Hubbly.Infrastructure\\Hubbly.Infrastructure.csproj|solutionrelative:hubbly.infrastructure\\repositories\\refreshtokenrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{812BFC8E-0A31-469F-BD6E-211B5C290FD2}|Hubbly.Api\\Hubbly.Api.csproj|d:\\vsprojects\\hubbly.backend\\hubbly.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{812BFC8E-0A31-469F-BD6E-211B5C290FD2}|Hubbly.Api\\Hubbly.Api.csproj|solutionrelative:hubbly.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A660BFBA-1B61-487B-A5CD-0B66CF2E2091}|Hubbly.Application\\Hubbly.Application.csproj|d:\\vsprojects\\hubbly.backend\\hubbly.application\\services\\roomservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A660BFBA-1B61-487B-A5CD-0B66CF2E2091}|Hubbly.Application\\Hubbly.Application.csproj|solutionrelative:hubbly.application\\services\\roomservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 5,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{0174dea2-fdbe-4ef1-8f99-c0beae78880f}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:129:0:{13b12e3e-c1b4-4539-9371-4fe9a0d523fc}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{aa2115a1-9712-457b-9047-dbb71ca2cdd2}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "SignalRDtos.cs",
+              "DocumentMoniker": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Domain\\Dtos\\SignalRDtos.cs",
+              "RelativeDocumentMoniker": "Hubbly.Domain\\Dtos\\SignalRDtos.cs",
+              "ToolTip": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Domain\\Dtos\\SignalRDtos.cs",
+              "RelativeToolTip": "Hubbly.Domain\\Dtos\\SignalRDtos.cs",
+              "ViewState": "AgIAAA4AAAAAAAAAAAAIwCgAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-12T07:53:25.906Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ChatHub.cs",
+              "DocumentMoniker": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Api\\Hubs\\ChatHub.cs",
+              "RelativeDocumentMoniker": "Hubbly.Api\\Hubs\\ChatHub.cs",
+              "ToolTip": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Api\\Hubs\\ChatHub.cs",
+              "RelativeToolTip": "Hubbly.Api\\Hubs\\ChatHub.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACQAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-12T07:47:40.103Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "RefreshTokenRepository.cs",
+              "DocumentMoniker": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Infrastructure\\Repositories\\RefreshTokenRepository.cs",
+              "RelativeDocumentMoniker": "Hubbly.Infrastructure\\Repositories\\RefreshTokenRepository.cs",
+              "ToolTip": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Infrastructure\\Repositories\\RefreshTokenRepository.cs",
+              "RelativeToolTip": "Hubbly.Infrastructure\\Repositories\\RefreshTokenRepository.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAF0AAAAqAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-12T07:47:06.196Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "IRefreshTokenRepository.cs",
+              "DocumentMoniker": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Domain\\Services\\IRefreshTokenRepository.cs",
+              "RelativeDocumentMoniker": "Hubbly.Domain\\Services\\IRefreshTokenRepository.cs",
+              "ToolTip": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Domain\\Services\\IRefreshTokenRepository.cs",
+              "RelativeToolTip": "Hubbly.Domain\\Services\\IRefreshTokenRepository.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAAA/AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-12T07:46:38.698Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "AuthService.cs",
+              "DocumentMoniker": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Application\\Services\\AuthService.cs",
+              "RelativeDocumentMoniker": "Hubbly.Application\\Services\\AuthService.cs",
+              "ToolTip": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Application\\Services\\AuthService.cs",
+              "RelativeToolTip": "Hubbly.Application\\Services\\AuthService.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAIwAAAAfAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-12T07:40:06.225Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "RoomService.cs",
+              "DocumentMoniker": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Application\\Services\\RoomService.cs",
+              "RelativeDocumentMoniker": "Hubbly.Application\\Services\\RoomService.cs",
+              "ToolTip": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Application\\Services\\RoomService.cs",
+              "RelativeToolTip": "Hubbly.Application\\Services\\RoomService.cs",
+              "ViewState": "AgIAABwAAAAAAAAAAAAgwJIAAAAZAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-12T07:28:02.958Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Api\\Program.cs",
+              "RelativeDocumentMoniker": "Hubbly.Api\\Program.cs",
+              "ToolTip": "D:\\VSProjects\\Hubbly.Backend\\Hubbly.Api\\Program.cs",
+              "RelativeToolTip": "Hubbly.Api\\Program.cs",
+              "ViewState": "AgIAABIAAAAAAAAAAAAAANUAAAA6AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-11T22:08:00.606Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

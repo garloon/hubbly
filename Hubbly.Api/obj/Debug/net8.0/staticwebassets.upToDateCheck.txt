@@ -1,0 +1,7 @@
+wwwroot\animations\female_clapping.glb
+wwwroot\animations\female_idle.glb
+wwwroot\animations\male_clapping.glb
+wwwroot\animations\male_idle.glb
+wwwroot\avatars\female_base.glb
+wwwroot\avatars\male_base.glb
+wwwroot\three_scene.html

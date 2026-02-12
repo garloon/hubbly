@@ -1,0 +1,15 @@
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\Hubbly.Application.csproj.AssemblyReference.cache
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\Hubbly.Application.GeneratedMSBuildEditorConfig.editorconfig
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\Hubbly.Application.AssemblyInfoInputs.cache
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\Hubbly.Application.AssemblyInfo.cs
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\Hubbly.Application.csproj.CoreCompileInputs.cache
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\bin\Debug\net8.0\Hubbly.Application.deps.json
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\bin\Debug\net8.0\Hubbly.Application.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\bin\Debug\net8.0\Hubbly.Application.pdb
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\bin\Debug\net8.0\Hubbly.Domain.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\bin\Debug\net8.0\Hubbly.Domain.pdb
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\Hubbly.A.3C073D05.Up2Date
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\Hubbly.Application.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\refint\Hubbly.Application.dll
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\Hubbly.Application.pdb
+D:\VSProjects\Hubbly.Backend\Hubbly.Application\obj\Debug\net8.0\ref\Hubbly.Application.dll
