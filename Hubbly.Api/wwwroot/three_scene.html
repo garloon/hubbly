@@ -744,14 +744,27 @@
                 if (intersects.length > 0) {
                     const userId = findAvatarData(intersects[0].object);
                     if (userId) {
-                        const isCurrent = window.currentUserId === userId;
-                        console.log(`✅ Клик по аватару: ${userId} ${isCurrent ? '(👑 ЭТО Я)' : ''}`);
+                        console.log(`✅ Клик по аватару: ${userId}`);
 
+                        const message = JSON.stringify({
+                            type: 'avatar_clicked',
+                            userId: userId
+                        });
+
+                        // ANDROID
+                        if (window.hubblyBridge) {
+                            window.hubblyBridge.postMessage(message);
+                            console.log('✅ Sent via hubblyBridge');
+                        }
+
+                        // iOS
                         if (window.webkit?.messageHandlers?.hubbly3d) {
-                            window.webkit.messageHandlers.hubbly3d.postMessage(JSON.stringify({
-                                type: 'avatar_clicked',
-                                userId: userId
-                            }));
+                            window.webkit.messageHandlers.hubbly3d.postMessage(message);
+                        }
+
+                        // Windows
+                        if (window.chrome?.webview) {
+                            window.chrome.webview.postMessage(message);
                         }
                     }
                 }
