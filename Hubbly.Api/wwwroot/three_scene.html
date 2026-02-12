@@ -720,6 +720,8 @@
                 mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
                 mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
+                console.log("🖱️ Canvas clicked at:", event.clientX, event.clientY);
+
                 raycaster.setFromCamera(mouse, camera);
 
                 // Собираем все mesh аватаров
@@ -752,6 +754,8 @@
                         console.log(`👆 Avatar clicked: ${userId}`);
                     }
                 }
+
+                console.log(`🎯 Intersects found: ${intersects.length}`);
             });
         }
 
