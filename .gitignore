@@ -49,6 +49,9 @@ secrets.json
 *.dbmdl
 *.dbml
 *.psess
+bin/
+obj/
+publish/
 
 ## Entity Framework
 *.edmx
