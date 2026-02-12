@@ -740,11 +740,14 @@
                 if (currentTime - lastClickTime < clickDelay) return;
                 lastClickTime = currentTime;
 
-                // 1. Нормализованные координаты мыши (-1 до 1)
                 const rect = canvas.getBoundingClientRect();
                 const mouse = new THREE.Vector2();
+
+                // Нормализуем координаты относительно canvas, а не окна!
                 mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                console.log(`🎯 Mouse normalized:`, mouse.x, mouse.y);
 
                 // 2. Для OrthographicCamera: луч идет ПАРАЛЛЕЛЬНО из точки клика
                 const raycaster = new THREE.Raycaster();
