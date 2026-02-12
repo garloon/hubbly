@@ -17,7 +17,7 @@ public class AuthController : ControllerBase
     [HttpPost("guest")]
     public async Task<IActionResult> AuthenticateGuest([FromBody] GuestAuthRequest request)
     {
-        var response = await _authService.AuthenticateGuestAsync(request.DeviceId, request.Nickname, request.AvatarConfigJson);
+        var response = await _authService.AuthenticateGuestAsync(request.DeviceId, request.AvatarConfigJson);
         return Ok(response);
     }
 

@@ -28,6 +28,7 @@ _ReSharper*/
 *.resharper
 *.DotSettings.user
 .vscode/
+.vs/
 
 ## Environment
 appsettings.Development.json
