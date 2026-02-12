@@ -160,8 +160,8 @@
             async loadModel() {
                 if (this.isLoaded) return;
 
-                const currentPosition = this.mesh.position.clone();
                 const parent = this.mesh.parent;
+                const currentX = this.mesh.position.x;  // Сохраняем только X!
 
                 try {
                     const newMesh = await this.loadGLBModel();
@@ -174,15 +174,15 @@
                         }
 
                         this.mesh = newMesh;
-                        this.mesh.position.copy(currentPosition);
-                        this.mesh.position.y -= 1.1;
 
-                        // ✅ Проставляем userData на корень
+                        // ✅ НЕ копируем позицию! Ставим правильную для GLB
+                        this.mesh.position.set(currentX, 0.2, 0);
+
+                        // ✅ Проставляем userData
                         this.mesh.userData.avatar = this;
                         this.mesh.userData.avatarId = this.userId;
                         this.mesh.userData.nickname = this.nickname;
 
-                        // ✅ Проставляем userData на все дочерние mesh
                         this.mesh.traverse((child) => {
                             if (child.isMesh) {
                                 child.userData.avatar = this;
@@ -350,8 +350,14 @@
             updatePosition() {
                 if (this.slotIndex < 0 || !this.mesh) return;
                 const xPos = this.slotIndex * CONFIG.SLOT_SPACING;
-                // ✅ Центр аватара всегда на Y = 1.1
-                this.mesh.position.set(xPos, CONFIG.AVATAR_CENTER_Y, 0);
+
+                if (this.isLoaded && !this.usingFallback) {
+                    // ✅ GLB: pivot в ногах - ставим ноги на 0.2
+                    this.mesh.position.set(xPos, 0.2, 0);
+                } else {
+                    // ✅ Плейсхолдер: центр на 1.1
+                    this.mesh.position.set(xPos, CONFIG.AVATAR_CENTER_Y, 0);
+                }
             }
 
             update(deltaTime) {
