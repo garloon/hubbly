@@ -399,7 +399,11 @@
             }
 
             addAvatar(userId, nickname, gender, isCurrentUser = false) {
-                if (this.avatars.has(userId)) return false;
+                if (this.avatars.has(userId)) {
+                    console.log(`⏭️ Avatar ${userId} already exists`);
+                    return false;
+                }
+
                 if (this.availableSlots.length === 0) {
                     console.error('No available slots');
                     return false;
@@ -885,6 +889,11 @@
             },
             addAvatar: function (userId, nickname, gender, isCurrentUser = false) {
                 if (!isInitialized || !avatarManager) return false;
+
+                if (isCurrentUser && window.currentUserId === userId) {
+                    console.log(`⏭️ Skipping duplicate self avatar: ${userId}`);
+                    return true;
+                }
 
                 if (isCurrentUser) {
                     window.currentUserId = userId;
