@@ -232,7 +232,7 @@
 
                     const onLoad = (gltf) => {
                         const model = gltf.scene;
-                        model.scale.set(CONFIG.MODEL_SCALE, CONFIG.MODEL_SCALE, CONFIG.MODEL_SCALE);
+                        model.scale.set(5, 5, 5);
                         model.name = `glb_avatar_${this.userId}`;
 
                         model.traverse((child) => {
@@ -362,7 +362,6 @@
                     // ✅ GLB: pivot в ногах - ставим ноги на 0.2
                     this.mesh.position.set(xPos, 0.2, 0);
                 } else {
-                    // ✅ Плейсхолдер: центр на 1.1
                     this.mesh.position.set(xPos, CONFIG.AVATAR_CENTER_Y, 0);
                 }
             }
