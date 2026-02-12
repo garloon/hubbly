@@ -720,13 +720,13 @@
 
         function setupRaycaster() {
             const canvas = document.getElementById('renderCanvas');
-            const clickableObjects = []; // Храним здесь все кликабельные объекты
+            const clickableObjects = []; // Храним здесь все кликабельные объекты (только аватары)
 
             // Функция для обновления списка кликабельных объектов
             function updateClickableObjects() {
                 clickableObjects.length = 0; // Очищаем массив
                 scene.traverse(obj => {
-                    if (obj.isMesh && (obj.userData.avatarId || obj.userData.avatar)) {
+                    if (obj.isMesh && obj.userData.avatarId) { // Только меши с avatarId
                         clickableObjects.push(obj);
                     }
                 });
@@ -766,31 +766,25 @@
             // Обработчик кликов
             const handleClick = (event) => {
                 const currentTime = Date.now();
-                if (currentTime - lastClickTime < clickDelay) return;
+                if (currentTime - lastClickTime < clickDelay) return; // Игнорируем двойные клики
                 lastClickTime = currentTime;
 
-                // 1. Координаты мыши (нормализованные)
+                // Получаем координаты клика
                 const rect = canvas.getBoundingClientRect();
                 const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-                // 2. СОЗДАЁМ ЛУЧ ДЛЯ ОРТОГРАФИЧЕСКОЙ КАМЕРЫ
+                // Создаём луч (ray) из камеры в точку клика
                 const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
 
-                // ВАЖНО: Для OrthographicCamera нужен особый подход
-                const mouseVector = new THREE.Vector3(x, y, 0);
-                const origin = camera.position.clone();
-                const direction = mouseVector.unproject(camera).sub(origin).normalize();
-
-                raycaster.set(origin, direction);
-                raycaster.far = 1000;
-
-                // 3. Проверяем пересечения
-                const intersects = raycaster.intersectObjects(clickableObjects);
+                // Проверяем пересечения ТОЛЬКО с аватарами (игнорируем пол и другие объекты)
+                const intersects = raycaster.intersectObjects(clickableObjects, true); // `true` - рекурсивный поиск
 
                 if (intersects.length > 0) {
                     const userId = findAvatarData(intersects[0].object);
                     if (userId) {
+                        // Отправляем событие в MAUI
                         if (window.webkit?.messageHandlers?.hubbly3d) {
                             window.webkit.messageHandlers.hubbly3d.postMessage(JSON.stringify({
                                 type: 'avatar_clicked',
@@ -799,9 +793,10 @@
                         }
                         console.log(`✅ Клик по аватару: ${userId}`);
                     }
+                } else {
+                    console.log("❌ Клик не попал по аватару");
                 }
             };
-
 
             // Обработчики событий
             canvas.addEventListener('click', handleClick);
