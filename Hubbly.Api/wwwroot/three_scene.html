@@ -711,43 +711,35 @@
         }
 
         function setupRaycaster() {
-            const raycaster = new THREE.Raycaster();
-            const mouse = new THREE.Vector2();
             const canvas = document.getElementById('renderCanvas');
 
             canvas.addEventListener('click', (event) => {
-                // Нормализованные координаты для OrthographicCamera
-                mouse.x = (event.clientX / canvas.clientWidth) * 2 - 1;
-                mouse.y = -(event.clientY / canvas.clientHeight) * 2 + 1;
+                // 1. Координаты мыши
+                const rect = canvas.getBoundingClientRect();
+                const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-                raycaster.setFromCamera(mouse, camera);
+                // 2. Raycaster
+                const raycaster = new THREE.Raycaster();
+                raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
 
-                // СОБИРАЕМ ВСЕ MESH АВАТАРОВ
-                const allMeshes = [];
-                avatarManager.getAvatars().forEach(avatar => {
-                    if (avatar.mesh) {
-                        // У плейсхолдера mesh — сам mesh
-                        allMeshes.push(avatar.mesh);
-
-                        // У GLB модели — все дочерние mesh
-                        avatar.mesh.traverse((child) => {
-                            if (child.isMesh) allMeshes.push(child);
-                        });
+                // 3. ПРЯМОЙ ПЕРЕБОР ВСЕХ ДЕТЕЙ СЦЕНЫ
+                const objects = [];
+                scene.traverse(obj => {
+                    if (obj.isMesh && obj.userData.avatarId) {
+                        objects.push(obj);
                     }
                 });
 
-                const intersects = raycaster.intersectObjects(allMeshes);
+                console.log(`🔍 Checking ${objects.length} avatar meshes`);
+
+                const intersects = raycaster.intersectObjects(objects);
 
                 if (intersects.length > 0) {
                     const hit = intersects[0].object;
-
-                    // Ищем корневой объект аватара
-                    let root = hit;
-                    while (root.parent && root.parent !== scene) {
-                        root = root.parent;
-                    }
-
-                    const userId = root.userData?.avatarId || root.userData?.avatar?.userId;
+                    const userId = hit.userData.avatarId ||
+                        hit.userData.avatar?.userId ||
+                        hit.parent?.userData.avatarId;
 
                     if (userId) {
                         if (window.webkit?.messageHandlers?.hubbly3d) {
@@ -756,10 +748,10 @@
                                 userId: userId
                             }));
                         }
-                        console.log(`👆 Avatar clicked: ${userId}`);
+                        console.log(`✅ HIT: ${userId}`);
                     }
                 } else {
-                    console.log("❌ No avatar hit");
+                    console.log('❌ No hit');
                 }
             });
         }
