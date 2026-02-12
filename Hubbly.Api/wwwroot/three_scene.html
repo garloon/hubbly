@@ -182,6 +182,7 @@
                                 child.userData.avatar = this;
                                 child.userData.avatarId = this.userId;
                                 child.userData.nickname = this.nickname;
+                                child.visible = true;
                             }
                         });
 
@@ -678,13 +679,13 @@
             directionalLight.shadow.camera.far = 50;
             scene.add(directionalLight);
 
-            const planeGeometry = new THREE.PlaneGeometry(30, 30);
-            const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x111111, side: THREE.DoubleSide });
-            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-            plane.rotation.x = -Math.PI / 2;
-            plane.position.y = -1.1;
-            plane.receiveShadow = true;
-            scene.add(plane);
+            //const planeGeometry = new THREE.PlaneGeometry(30, 30);
+            //const planeMaterial = new THREE.MeshPhongMaterial({ color: 0x111111, side: THREE.DoubleSide });
+            //const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            //plane.rotation.x = -Math.PI / 2;
+            //plane.position.y = -1.1;
+            //plane.receiveShadow = true;
+            //scene.add(plane);
         }
 
         function animate() {
@@ -724,9 +725,9 @@
 
             // Функция для обновления списка кликабельных объектов
             function updateClickableObjects() {
-                clickableObjects.length = 0; // Очищаем массив
+                clickableObjects.length = 0;
                 scene.traverse(obj => {
-                    if (obj.isMesh && obj.userData.avatarId) { // Только меши с avatarId
+                    if (obj.isMesh && obj.userData.avatarId) {
                         clickableObjects.push(obj);
                     }
                 });
