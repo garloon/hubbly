@@ -16,13 +16,46 @@ jobs:
       uses: actions/setup-dotnet@v3
       with:
         dotnet-version: '8.0.x'
-        
+    
+    - name: Restore dependencies
+      run: dotnet restore Hubbly.Api/Hubbly.Api.csproj
+    
+    - name: Build
+      run: dotnet build Hubbly.Api/Hubbly.Api.csproj --configuration Release --no-restore
+    
     - name: Publish project
-      run: dotnet publish Hubbly.Api -c Release -o ./publish
-      
+      run: |
+        # Публикуем проект
+        dotnet publish Hubbly.Api/Hubbly.Api.csproj \
+          --configuration Release \
+          --output ./publish \
+          --no-build \
+          --no-restore
+        
+        # ✅ ЯВНО копируем wwwroot (на всякий случай)
+        if [ -d "Hubbly.Api/wwwroot" ]; then
+          echo "Copying wwwroot files..."
+          mkdir -p ./publish/wwwroot
+          cp -r Hubbly.Api/wwwroot/* ./publish/wwwroot/
+          echo "✅ wwwroot copied"
+        else
+          echo "⚠️ wwwroot folder not found"
+        fi
+        
+        # Проверяем что three_scene.html на месте
+        if [ -f "./publish/wwwroot/three_scene.html" ]; then
+          echo "✅ three_scene.html is present"
+        else
+          echo "❌ three_scene.html MISSING!"
+          exit 1
+        fi
+    
     - name: Create tar archive
-      run: tar -czf publish.tar.gz -C publish .
-      
+      run: |
+        cd publish
+        tar -czf ../publish.tar.gz .
+        cd ..
+    
     - name: Copy to server
       uses: appleboy/scp-action@v0.1.4
       with:
@@ -31,8 +64,8 @@ jobs:
         port: ${{ secrets.SERVER_PORT }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         source: "publish.tar.gz"
-        target: "/opt"
-        
+        target: "/tmp"  # ✅ Кладём во временную папку, а не в /opt
+    
     - name: Deploy on server
       uses: appleboy/ssh-action@v0.1.5
       with:
@@ -41,17 +74,51 @@ jobs:
         port: ${{ secrets.SERVER_PORT }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-              rm -rf /opt/hubbly-publish-new
-              mkdir -p /opt/hubbly-publish-new
-              tar -xzf /opt/publish.tar.gz -C /opt/hubbly-publish-new
-              rm /opt/publish.tar.gz
-              
-              cp -r /opt/hubbly-publish/wwwroot /opt/hubbly-publish-new/ || true
-              
-              rm -rf /opt/hubbly-publish-old
-              mv /opt/hubbly-publish /opt/hubbly-publish-old || true
-              mv /opt/hubbly-publish-new /opt/hubbly-publish
-              
-              systemctl restart hubbly
-              sleep 5
-              systemctl status hubbly
+          set -e  # Останавливаемся при ошибке
+          
+          echo "🚀 Starting deployment..."
+          
+          # 1. Распаковываем новую версию
+          echo "📦 Extracting files..."
+          rm -rf /opt/hubbly-publish-new
+          mkdir -p /opt/hubbly-publish-new
+          tar -xzf /tmp/publish.tar.gz -C /opt/hubbly-publish-new
+          rm /tmp/publish.tar.gz
+          
+          # 2. СОХРАНЯЕМ старый wwwroot (файлы, загруженные через админку)
+          echo "💾 Preserving existing wwwroot files..."
+          if [ -d "/opt/hubbly-publish/wwwroot/avatars" ]; then
+            mkdir -p /opt/hubbly-publish-new/wwwroot
+            cp -r /opt/hubbly-publish/wwwroot/avatars /opt/hubbly-publish-new/wwwroot/ 2>/dev/null || true
+            cp -r /opt/hubbly-publish/wwwroot/animations /opt/hubbly-publish-new/wwwroot/ 2>/dev/null || true
+          fi
+          
+          # 3. Проверяем наличие three_scene.html
+          if [ ! -f "/opt/hubbly-publish-new/wwwroot/three_scene.html" ]; then
+            echo "❌ ERROR: three_scene.html missing in new version!"
+            exit 1
+          fi
+          
+          # 4. Меняем местами (blue-green deployment)
+          echo "🔄 Switching versions..."
+          rm -rf /opt/hubbly-publish-old
+          mv /opt/hubbly-publish /opt/hubbly-publish-old 2>/dev/null || true
+          mv /opt/hubbly-publish-new /opt/hubbly-publish
+          
+          # 5. Перезапускаем сервис
+          echo "🔄 Restarting service..."
+          systemctl restart hubbly
+          sleep 5
+          
+          # 6. Проверяем статус
+          echo "📊 Service status:"
+          systemctl status hubbly --no-pager
+          
+          # 7. Проверяем что файл обновился
+          echo "🔍 Verifying three_scene.html..."
+          grep -q "statusBar" /opt/hubbly-publish/wwwroot/three_scene.html && (
+            echo "❌ ERROR: statusBar still present!"
+            exit 1
+          ) || echo "✅ three_scene.html is clean"
+          
+          echo "✅ Deployment completed successfully!"
