@@ -177,6 +177,14 @@
                         this.mesh.userData.avatarId = this.userId;
                         this.mesh.userData.nickname = this.nickname;
 
+                        this.mesh.traverse((child) => {
+                            if (child.isMesh) {
+                                child.userData.avatar = this;
+                                child.userData.avatarId = this.userId;
+                                child.userData.nickname = this.nickname;
+                            }
+                        });
+
                         // Создаем анимационный микшер
                         this.mixer = new THREE.AnimationMixer(this.mesh);
 
