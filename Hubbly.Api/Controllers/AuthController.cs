@@ -32,7 +32,6 @@ public class AuthController : ControllerBase
 public record GuestAuthRequest
 {
     public string DeviceId { get; init; } = null!;
-    public string Nickname { get; init; } = null!;
     public string? AvatarConfigJson { get; init; }
 }
 
