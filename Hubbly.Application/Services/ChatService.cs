@@ -41,6 +41,9 @@ public class ChatService : IChatService
                 // 1. Проверяем пользователя
                 var sender = await GetSenderAsync(senderId);
 
+                if (string.IsNullOrWhiteSpace(content))
+                    throw new ArgumentException("Message content cannot be empty");
+
                 // 2. Валидируем сообщение
                 await ValidateMessageAsync(content, actionType);
 

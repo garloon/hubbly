@@ -83,6 +83,9 @@ public class UserService : IUserService
 
             try
             {
+                if (string.IsNullOrWhiteSpace(newAvatarConfigJson))
+                    throw new ArgumentException("Avatar config cannot be empty");
+
                 ValidateAvatarConfig(newAvatarConfigJson);
 
                 var user = await GetUserAsync(userId);

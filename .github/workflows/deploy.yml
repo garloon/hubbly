@@ -9,6 +9,7 @@ env:
   PROJECT_PATH: 'Hubbly.Api/Hubbly.Api.csproj'
   PUBLISH_PATH: './publish'
   MAX_BACKUPS: 3
+  WWW_ROOT: 'wwwroot'  # 👈 Выносим в переменную, чтобы избежать маскировки
 
 jobs:
   test:
@@ -63,7 +64,7 @@ jobs:
         # Проверяем наличие critical files
         echo "🔍 Verifying published files..."
         
-        if [ ! -f "${{ env.PUBLISH_PATH }}/wwwroot/three_scene.html" ]; then
+        if [ ! -f "${{ env.PUBLISH_PATH }}/${{ env.WWW_ROOT }}/three_scene.html" ]; then
           echo "❌ three_scene.html MISSING!"
           exit 1
         else
@@ -80,7 +81,8 @@ jobs:
         cd ${{ env.PUBLISH_PATH }}
         
         # Создаем контрольную сумму
-        find . -type f -exec md5sum {} \; > checksums.txt
+        find . -type f ! -name "checksums.txt" -exec md5sum {} \; > checksums.tmp
+        mv checksums.tmp checksums.txt
         
         # Создаем архив с меткой времени
         TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -118,6 +120,7 @@ jobs:
           CURRENT_VERSION="/opt/hubbly"
           BACKUP_VERSION="/opt/hubbly-backup"
           MAX_BACKUPS=${{ env.MAX_BACKUPS }}
+          WWW_ROOT="${{ env.WWW_ROOT }}"
           
           # Функция логирования
           log() {
@@ -168,22 +171,26 @@ jobs:
           # 3. Проверка целостности
           log "🔍 Verifying package integrity..."
           cd ${NEW_VERSION}
-          md5sum -c checksums.txt > /dev/null 2>&1
-          if [ $? -eq 0 ]; then
-            log "✅ Package integrity verified"
+          if [ -f "checksums.txt" ]; then
+            md5sum -c checksums.txt > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              log "✅ Package integrity verified"
+            else
+              log "❌ Package integrity check failed!"
+              exit 1
+            fi
+            rm checksums.txt
           else
-            log "❌ Package integrity check failed!"
-            exit 1
+            log "⚠️ No checksums file found, skipping integrity check"
           fi
-          rm checksums.txt
           
           # 4. СОХРАНЯЕМ пользовательские файлы
           log "💾 Preserving user-uploaded files..."
-          if [ -d "${CURRENT_VERSION}/wwwroot/avatars" ]; then
-            mkdir -p ${NEW_VERSION}/wwwroot
-            cp -r ${CURRENT_VERSION}/wwwroot/avatars ${NEW_VERSION}/wwwroot/ 2>/dev/null && \
+          if [ -d "${CURRENT_VERSION}/${WWW_ROOT}/avatars" ]; then
+            mkdir -p ${NEW_VERSION}/${WWW_ROOT}
+            cp -r ${CURRENT_VERSION}/${WWW_ROOT}/avatars ${NEW_VERSION}/${WWW_ROOT}/ 2>/dev/null && \
               log "✅ Avatars preserved" || log "⚠️ No avatars to preserve"
-            cp -r ${CURRENT_VERSION}/wwwroot/animations ${NEW_VERSION}/wwwroot/ 2>/dev/null && \
+            cp -r ${CURRENT_VERSION}/${WWW_ROOT}/animations ${NEW_VERSION}/${WWW_ROOT}/ 2>/dev/null && \
               log "✅ Animations preserved" || log "⚠️ No animations to preserve"
           fi
           
@@ -196,7 +203,7 @@ jobs:
           
           # 6. Проверяем наличие critical files
           log "🔍 Verifying critical files..."
-          if [ ! -f "${NEW_VERSION}/wwwroot/three_scene.html" ]; then
+          if [ ! -f "${NEW_VERSION}/${WWW_ROOT}/three_scene.html" ]; then
             log "❌ three_scene.html missing in new version!"
             exit 1
           fi

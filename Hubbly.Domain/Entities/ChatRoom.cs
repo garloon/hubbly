@@ -3,7 +3,7 @@
 public class ChatRoom
 {
     public Guid Id { get; private set; }
-    public string Name { get; private set; }
+    public string Name { get; private set; } = null!;
     public int CurrentUsers { get; private set; }
     public int MaxUsers { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
