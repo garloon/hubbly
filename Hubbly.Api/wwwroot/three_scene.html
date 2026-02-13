@@ -66,8 +66,8 @@
     <canvas id="renderCanvas"></canvas>
 
     <script type="module">
-        import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js";
-        import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js";
+        import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.121.1/build/three.module.js";
+        import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.121.1/examples/jsm/loaders/GLTFLoader.js";
         import * as TWEEN from "https://cdn.jsdelivr.net/npm/@tweenjs/tween.js@18.6.4/dist/tween.esm.js";
 
         const CONFIG = {
@@ -81,8 +81,6 @@
             MODEL_SCALE: 1.8,
             AVATAR_FOOT_Y: 0.2,
             AVATAR_HEIGHT: 1.8,
-            COLLIDER_RADIUS: 0.4,
-            COLLIDER_HEIGHT: 1.4,
             ANIMATIONS: {
                 idle: 'idle.glb',
                 clap: 'clapping.glb'
@@ -147,23 +145,17 @@
                 shadow.position.y = 0.01;
                 this.group.add(shadow);
 
-                // 🔥 СОЗДАЕМ КОЛЛАЙДЕР (капсула)
-                const capsuleGeo = new THREE.CapsuleGeometry(
-                    CONFIG.COLLIDER_RADIUS,
-                    CONFIG.COLLIDER_HEIGHT,
-                    16
-                );
-
-                // Визуализация коллайдера (только для отладки, в проде убрать opacity=0)
-                const capsuleMat = new THREE.MeshPhongMaterial({
+                const boxGeo = new THREE.BoxGeometry(0.8, 1.8, 0.4);
+                const boxMat = new THREE.MeshPhongMaterial({
                     color: 0x00ff00,
                     wireframe: true,
                     transparent: true,
                     opacity: 0.3 // В проде 0, для отладки поставь 0.3
                 });
 
-                this.collider = new THREE.Mesh(capsuleGeo, capsuleMat);
-                this.collider.position.y = CONFIG.COLLIDER_HEIGHT / 2; // Центр капсулы
+
+                this.collider = new THREE.Mesh(boxGeo, boxMat);
+                this.collider.position.y = 0.9; // Центр куба
                 this.collider.userData.avatarId = this.userId;
                 this.collider.userData.nickname = this.nickname;
                 this.collider.userData.isCurrentUser = this.isCurrentUser;
