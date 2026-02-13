@@ -206,13 +206,16 @@
 
                         // 🔥 ДОБАВЛЯЕМ КОЛЛАЙДЕР К ЗАГРУЖЕННОЙ МОДЕЛИ
                         if (oldCollider) {
-                            // Обновляем позицию коллайдера под новую модель
-                            oldCollider.position.y = 0.9;
+                            // Удаляем коллайдер из старой группы
+                            oldCollider.removeFromParent();
+
+                            // Обновляем userData
                             oldCollider.userData.avatarId = this.userId;
                             oldCollider.userData.nickname = this.nickname;
                             oldCollider.userData.isCurrentUser = this.isCurrentUser;
                             oldCollider.userData.isCollider = true;
 
+                            // Добавляем в новую группу
                             this.group.add(oldCollider);
                             this.collider = oldCollider;
                         }
