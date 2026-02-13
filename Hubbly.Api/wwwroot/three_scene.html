@@ -190,32 +190,27 @@
             async loadModel() {
                 if (this.isLoaded) return;
 
-                // Сохраняем ссылки до начала операций
                 const parent = this.group ? this.group.parent : null;
-                const currentX = this.group ? this.group.position.x : 0;
+                const currentX = this.xPosition; // Используем сохраненную позицию
                 const oldCollider = this.collider;
 
                 try {
                     const newModel = await this.loadGLBModel();
 
                     if (newModel) {
-                        // Если есть старая группа и родитель
                         if (this.group && parent) {
                             parent.remove(this.group);
                         }
 
                         this.group = newModel;
-                        this.group.position.set(currentX, CONFIG.AVATAR_FOOT_Y, 0);
+                        this.group.position.set(currentX, CONFIG.AVATAR_FOOT_Y, 0); // Используем currentX
                         this.group.scale.set(CONFIG.MODEL_SCALE, CONFIG.MODEL_SCALE, CONFIG.MODEL_SCALE);
 
-                        // Восстанавливаем коллайдер
                         if (oldCollider) {
-                            // Удаляем из старого родителя если есть
                             if (oldCollider.parent) {
                                 oldCollider.parent.remove(oldCollider);
                             }
 
-                            // Обновляем userData
                             oldCollider.userData = {
                                 avatarId: this.userId,
                                 nickname: this.nickname,
@@ -223,12 +218,10 @@
                                 isCollider: true
                             };
 
-                            // Добавляем в новую группу
                             this.group.add(oldCollider);
                             this.collider = oldCollider;
                         }
 
-                        // Обновляем userData группы
                         this.group.userData = {
                             avatarId: this.userId,
                             nickname: this.nickname,
@@ -283,8 +276,10 @@
                     const idleAnimation = await this.loadAnimation('idle');
                     if (idleAnimation && this.mixer) {
                         const action = this.mixer.clipAction(idleAnimation);
+                        action.setLoop(THREE.LoopRepeat, Infinity); // idle должен зацикливаться
                         this.actions.set('idle', action);
                         action.play();
+                        this.currentAction = action;
                     }
                 } catch (error) {
                     console.warn(`[ANIM] Could not load idle animation:`, error.message);
@@ -293,16 +288,28 @@
 
             async loadAnimation(animationName) {
                 return new Promise((resolve, reject) => {
-                    let animationPath = this.gender === 'male'
-                        ? `${CONFIG.SERVER_BASE_URL}animations/male_${CONFIG.ANIMATIONS[animationName]}`
-                        : `${CONFIG.SERVER_BASE_URL}animations/female_${CONFIG.ANIMATIONS[animationName]}`;
+                    // Формируем правильное имя файла с учетом пола
+                    let animationFile;
+
+                    if (animationName === 'idle') {
+                        animationFile = this.gender === 'male' ? 'male_idle.glb' : 'female_idle.glb';
+                    } else if (animationName === 'clap') {
+                        animationFile = this.gender === 'male' ? 'male_clapping.glb' : 'female_clapping.glb';
+                    } else {
+                        // Для других анимаций (если добавятся)
+                        animationFile = `${this.gender}_${animationName}.glb`;
+                    }
+
+                    const animationPath = `${CONFIG.SERVER_BASE_URL}animations/${animationFile}`;
+
+                    console.log(`Loading animation: ${animationPath}`);
 
                     new GLTFLoader().load(animationPath,
                         (gltf) => {
                             if (gltf.animations?.length > 0) {
                                 resolve(gltf.animations[0]);
                             } else {
-                                reject(new Error('No animations found'));
+                                reject(new Error(`No animations found in ${animationFile}`));
                             }
                         },
                         null,
@@ -314,6 +321,7 @@
             async playAnimation(animationName, loop = false, fadeDuration = 0.3) {
                 if (!this.mixer) return false;
 
+                // Загружаем анимацию если её нет
                 if (!this.actions.has(animationName)) {
                     try {
                         const clip = await this.loadAnimation(animationName);
@@ -322,6 +330,7 @@
                             this.actions.set(animationName, action);
                         }
                     } catch (error) {
+                        console.warn(`Failed to load animation ${animationName} for ${this.nickname}:`, error);
                         return false;
                     }
                 }
@@ -329,28 +338,79 @@
                 const action = this.actions.get(animationName);
                 if (!action) return false;
 
+                // Останавливаем текущую анимацию
                 if (this.currentAction) {
                     this.currentAction.fadeOut(fadeDuration);
                 }
 
+                // Настраиваем новую анимацию
                 action.reset();
-                action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-                action.clampWhenFinished = true;
-                action.fadeIn(fadeDuration).play();
 
+                if (loop) {
+                    // Зацикленная анимация (idle)
+                    action.setLoop(THREE.LoopRepeat, Infinity);
+                    action.clampWhenFinished = false;
+                } else {
+                    // Одноразовая анимация (clap)
+                    action.setLoop(THREE.LoopOnce, 1);
+                    action.clampWhenFinished = false;
+
+                    // Получаем длительность анимации
+                    if (action.getClip()) {
+                        const duration = action.getClip().duration * 1000; // в миллисекундах
+
+                        // Убираем предыдущий таймер если был
+                        if (this._returnToIdleTimer) {
+                            clearTimeout(this._returnToIdleTimer);
+                        }
+
+                        // Ставим таймер на возврат в idle
+                        this._returnToIdleTimer = setTimeout(() => {
+                            if (this.mixer && this.currentAction === action) {
+                                console.log(`${this.nickname} finished ${animationName}, returning to idle`);
+                                this.playAnimation('idle', true, fadeDuration);
+                            }
+                            this._returnToIdleTimer = null;
+                        }, duration - 50); // Возвращаемся чуть раньше для плавности
+                    }
+                }
+
+                action.fadeIn(fadeDuration).play();
                 this.currentAction = action;
+
                 return true;
+            }
+
+            async ensureIdleAnimation() {
+                if (!this.actions.has('idle')) {
+                    try {
+                        await this.loadAndPlayIdleAnimation();
+                    } catch (error) {
+                        console.warn('Failed to load idle animation:', error);
+                    }
+                }
+            }
+
+            setPosition(x) {
+                this.xPosition = x;
+                if (this.group) {
+                    this.group.position.set(x, CONFIG.AVATAR_FOOT_Y, 0);
+                }
             }
 
             setSlot(index) {
                 this.slotIndex = index;
-                this.updatePosition();
+                const xPos = (index - 25) * CONFIG.SLOT_SPACING;
+                this.setPosition(xPos);
             }
 
             updatePosition() {
-                if (this.slotIndex < 0 || !this.group) return;
-                const xPos = (this.slotIndex - (CONFIG.SLOT_COUNT - 1) / 2) * CONFIG.SLOT_SPACING;
-                this.group.position.set(xPos, CONFIG.AVATAR_FOOT_Y, 0);
+                if (this.slotIndex >= 0) {
+                    const xPos = (this.slotIndex - 25) * CONFIG.SLOT_SPACING;
+                    this.setPosition(xPos);
+                } else {
+                    this.setPosition(this.xPosition);
+                }
             }
 
             update(deltaTime) {
@@ -360,6 +420,11 @@
             }
 
             dispose() {
+                if (this._returnToIdleTimer) {
+                    clearTimeout(this._returnToIdleTimer);
+                    this._returnToIdleTimer = null;
+                }
+
                 if (this.mixer) {
                     this.mixer.stopAllAction();
                     if (this.group) {
@@ -397,12 +462,11 @@
 
         class AvatarManager {
             constructor() {
-                this.avatars = new Map(); // userId -> Avatar
-                this.positions = new Map(); // userId -> x позиция
-                this.availableSlots = []; // Свободные индексы
-                this.nextSlot = 0;
+                this.avatars = new Map();
+                this.positions = new Map(); // userId -> { slot, x }
+                this.availableSlots = [];
 
-                // Создаем слоты для 50 человек
+                // Создаем слоты для 50 человек (от 0 до 49)
                 for (let i = 0; i < 50; i++) {
                     this.availableSlots.push(i);
                 }
@@ -419,25 +483,29 @@
                     return false;
                 }
 
-                // Берем первый свободный слот
                 const slotIndex = this.availableSlots.shift();
-                const xPos = (slotIndex - 25) * CONFIG.SLOT_SPACING; // Центрируем (от -25 до 24)
+
+                // Вычисляем позицию: от -49 до 0? Нет, лучше симметрично от -24.5 до 24.5
+                // Чтобы центр был между слотами 24 и 25
+                const xPos = (slotIndex - 24.5) * CONFIG.SLOT_SPACING;
 
                 const avatar = new Avatar(userId, nickname, gender, isCurrentUser);
-                avatar.setPosition(xPos);
+                avatar.setPosition(xPos); // Теперь работает!
+                avatar.slotIndex = slotIndex; // Сохраняем индекс
 
                 this.avatars.set(userId, avatar);
                 this.positions.set(userId, { slot: slotIndex, x: xPos });
 
                 scene.add(avatar.group);
 
-                // Загружаем модель сразу (в PRE-MVP 50 человек - это максимум, справится)
+                // Загружаем модель с задержкой
                 setTimeout(() => avatar.loadModel(), 300 + (this.avatars.size * 100));
 
                 if (window.__updateClickableObjects) {
                     setTimeout(() => window.__updateClickableObjects(), 500);
                 }
 
+                console.log(`✅ Avatar added at slot ${slotIndex}, position ${xPos}`);
                 return true;
             }
 
@@ -445,7 +513,6 @@
                 const avatar = this.avatars.get(userId);
                 if (!avatar) return false;
 
-                // Возвращаем слот в пул
                 const position = this.positions.get(userId);
                 if (position) {
                     this.availableSlots.push(position.slot);
@@ -472,8 +539,6 @@
                 for (const avatar of this.avatars.values()) avatar.dispose();
                 this.avatars.clear();
                 this.positions.clear();
-
-                // Восстанавливаем слоты
                 this.availableSlots = [];
                 for (let i = 0; i < 50; i++) {
                     this.availableSlots.push(i);
@@ -511,7 +576,7 @@
 
             setupCamera() {
                 const aspect = window.innerWidth / window.innerHeight;
-                const frustumSize = 3.5;
+                const frustumSize = 4.0; // Немного увеличил, чтобы видеть больше
 
                 this.camera.left = -frustumSize * aspect / 2;
                 this.camera.right = frustumSize * aspect / 2;
@@ -555,10 +620,16 @@
                 const dt = now - this.lastDragTime;
 
                 if (dt > 0) {
-                    this.scrollVelocity = (deltaX / dt) * 0.5; // Сохраняем скорость для инерции
+                    this.scrollVelocity = (deltaX / dt) * 0.5;
                 }
 
                 this.targetX = this.currentX - deltaX * CONFIG.SCROLL_SENSITIVITY;
+
+                // Ограничиваем диапазон
+                const maxX = 24.5 * CONFIG.SLOT_SPACING;
+                const minX = -24.5 * CONFIG.SLOT_SPACING;
+                this.targetX = Math.max(minX, Math.min(maxX, this.targetX));
+
                 this.updateCameraPosition();
                 this.lastDragTime = now;
             }
@@ -567,7 +638,6 @@
                 if (!this.isDragging) return;
                 this.isDragging = false;
 
-                // Добавляем инерцию
                 if (Math.abs(this.scrollVelocity) > 0.1) {
                     this.startInertia();
                 } else {
@@ -579,7 +649,7 @@
                 const inertia = () => {
                     if (this.isDragging) return;
 
-                    this.scrollVelocity *= 0.95; // Затухание
+                    this.scrollVelocity *= 0.95;
 
                     if (Math.abs(this.scrollVelocity) < 0.01) {
                         this.snapToNearestSlot();
@@ -588,9 +658,8 @@
 
                     this.targetX += this.scrollVelocity * 0.5;
 
-                    // Ограничиваем диапазон
-                    const maxX = 24 * CONFIG.SLOT_SPACING;
-                    const minX = -25 * CONFIG.SLOT_SPACING;
+                    const maxX = 24.5 * CONFIG.SLOT_SPACING;
+                    const minX = -24.5 * CONFIG.SLOT_SPACING;
                     this.targetX = Math.max(minX, Math.min(maxX, this.targetX));
 
                     this.updateCameraPosition();
@@ -624,6 +693,11 @@
                 }
 
                 this.targetX = this.currentX - deltaX * CONFIG.SCROLL_SENSITIVITY;
+
+                const maxX = 24.5 * CONFIG.SLOT_SPACING;
+                const minX = -24.5 * CONFIG.SLOT_SPACING;
+                this.targetX = Math.max(minX, Math.min(maxX, this.targetX));
+
                 this.updateCameraPosition();
                 this.lastDragTime = now;
             }
@@ -646,17 +720,15 @@
             }
 
             updateCameraPosition() {
-                // Плавное движение
                 const lerpFactor = this.isDragging ? 0.3 : 0.1;
                 const dx = this.targetX - this.camera.position.x;
                 this.camera.position.x += dx * lerpFactor;
             }
 
             snapToNearestSlot() {
-                // Центрируем на ближайшем слоте
+                // Центрируем на ближайшей позиции слота
                 const slotNumber = Math.round(this.camera.position.x / CONFIG.SLOT_SPACING);
-                // Ограничиваем от -25 до 24
-                const clampedSlot = Math.max(-25, Math.min(24, slotNumber));
+                const clampedSlot = Math.max(-24, Math.min(24, slotNumber));
                 this.targetX = clampedSlot * CONFIG.SLOT_SPACING;
             }
 
@@ -665,12 +737,12 @@
                     this.updateCameraPosition();
                 }
 
-                // Центрируем на текущем пользователе при первом входе
                 if (!this.initialized && window.currentUserId) {
                     const myAvatar = avatarManager?.getAvatar(window.currentUserId);
-                    if (myAvatar?.group?.position?.x !== undefined) {
-                        this.targetX = myAvatar.group.position.x;
+                    if (myAvatar?.xPosition !== undefined) {
+                        this.targetX = myAvatar.xPosition;
                         this.initialized = true;
+                        console.log('Camera centered on current user');
                     }
                 }
             }
@@ -852,8 +924,13 @@
                 isLoaded: a.isLoaded
             })) || [],
 
-            playAnimation: (userId, animationName = 'idle', loop = true) =>
-                avatarManager?.playAvatarAnimation(userId, animationName, loop) || false,
+            playAnimation: (userId, animationName = 'idle', loop = true) => {
+                let animName = animationName;
+                if (animationName === 'clap' || animationName === 'clapping') {
+                    animName = 'clap';
+                }
+                return avatarManager?.playAvatarAnimation(userId, animName, loop) || false;
+            },
 
             cleanup: function () {
                 if (updateInterval) {
