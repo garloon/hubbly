@@ -1,4 +1,5 @@
-using Hubbly.Api.Hubs;
+п»їusing Hubbly.Api.Hubs;
+using Hubbly.Api.Middleware;
 using Hubbly.Application.Services;
 using Hubbly.Domain.Common;
 using Hubbly.Domain.Services;
@@ -14,243 +15,343 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 
-var builder = WebApplication.CreateBuilder(args);
+namespace Hubbly.Api;
 
-// Add services to the container.
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddControllers();
-
-builder.Services.AddHealthChecks()
-    .AddNpgSql(
-        builder.Configuration.GetConnectionString("DefaultConnection")!,
-        name: "database",
-        tags: new[] { "ready", "live" })
-    .AddUrlGroup(
-        new Uri("http://localhost:5000/avatars/male_base.glb"),
-        name: "3d-models",
-        tags: new[] { "ready" })
-    .AddCheck<SignalRHealthCheck>(
-        name: "signalr",
-        tags: new[] { "ready" });
-
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-// Configure DbContext
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-// Configure JWT
-var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>();
-builder.Services.AddSingleton(jwtSettings!);
-builder.Services.AddSingleton<JwtTokenService>();
-
-builder.Services.AddAuthentication(options =>
+public class Program
 {
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
+    public static async Task Main(string[] args)
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtSettings.Issuer,
-        ValidAudience = jwtSettings.Audience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
-        ClockSkew = TimeSpan.FromMinutes(5)
-    };
+        var builder = WebApplication.CreateBuilder(args);
+        var configuration = builder.Configuration;
+        var environment = builder.Environment;
 
-    // Для SignalR
-    options.Events = new JwtBearerEvents
+        // РќР°СЃС‚СЂРѕР№РєР° СЃРµСЂРІРёСЃРѕРІ
+        ConfigureServices(builder.Services, configuration, environment);
+
+        var app = builder.Build();
+
+        await ApplyMigrations(app);
+
+        // РќР°СЃС‚СЂРѕР№РєР° middleware
+        ConfigureMiddleware(app, environment);
+
+        await app.RunAsync();
+    }
+
+    private static async Task ApplyMigrations(WebApplication app)
     {
-        OnMessageReceived = context =>
+        using var scope = app.Services.CreateScope();
+        var services = scope.ServiceProvider;
+
+        try
         {
-            var accessToken = context.Request.Query["access_token"];
-            var path = context.HttpContext.Request.Path;
+            var dbContext = services.GetRequiredService<AppDbContext>();
             
-            if (!string.IsNullOrEmpty(accessToken) && (path.StartsWithSegments("/chatHub") || path.Value?.Contains("chatHub") == true))
-            {
-                Console.WriteLine($"JWT for SignalR: {accessToken}...");
-                context.Token = accessToken;
-            }
-            return Task.CompletedTask;
+            var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+            var pendingList = pendingMigrations.ToList();
+
+            if (pendingList.Any())
+                await dbContext.Database.MigrateAsync();
         }
-    };
-});
-
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowMobileApp", policy =>
-    {
-        policy.WithOrigins(
-                "http://localhost:5000",
-                "http://127.0.0.1:5000",
-                "http://10.0.2.2:5000",
-                "http://192.168.0.103:5000",
-                "http://127.0.0.1:5500"
-            )
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials()
-            .SetIsOriginAllowedToAllowWildcardSubdomains();
-    });
-});
-
-// Add SignalR
-builder.Services.AddSignalR(hubOptions =>
-{
-    // Защита от спама в чате
-    hubOptions.MaximumParallelInvocationsPerClient = 10; // 10 сообщений в секунду максимум
-    hubOptions.MaximumReceiveMessageSize = 65536; // 64KB
-    hubOptions.EnableDetailedErrors = false; // Не показывать детали ошибок клиенту
-});
-
-builder.Services.AddSingleton<IRoomService, RoomService>();
-
-// Register Repositories
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
-
-// Register Application Services
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<IChatService, ChatService>();
-builder.Services.AddScoped<IAssetService, AssetService>();
-builder.Services.AddScoped<IAvatarValidator, AvatarValidator>();
-builder.Services.AddScoped<IProfanityFilterService, ProfanityFilterService>();
-
-// Add Rate Limiting
-builder.Services.AddRateLimiter(options =>
-{
-    options.AddFixedWindowLimiter("Auth", opt =>
-    {
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.PermitLimit = 5;
-        opt.QueueLimit = 0;
-    });
-});
-
-builder.Services.AddHostedService<RoomCleanupService>();
-
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-var provider = new FileExtensionContentTypeProvider();
-provider.Mappings[".glb"] = "model/gltf-binary";
-provider.Mappings[".gltf"] = "model/gltf+json";
-
-app.UseStaticFiles(new StaticFileOptions
-{
-    ContentTypeProvider = provider,
-    ServeUnknownFileTypes = true,
-    OnPrepareResponse = ctx =>
-    {
-        ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
-
-        // ОТЛАДКА - смотрим какие файлы запрашивают
-        var path = ctx.Context.Request.Path;
-        Console.WriteLine($"[STATIC] Request: {path}");
-
-        var filePath = Path.Combine(app.Environment.WebRootPath, path.Value.TrimStart('/'));
-        Console.WriteLine($"[STATIC] File exists: {File.Exists(filePath)}");
-    }
-});
-
-//app.UseHttpsRedirection();
-app.UseAuthentication();
-app.UseAuthorization();
-app.UseRateLimiter();
-
-app.UseCors("AllowMobileApp");
-
-// Map Controllers
-app.MapControllers();
-
-// Map SignalR Hub
-app.MapHub<ChatHub>("/chatHub", options =>
-{
-    options.Transports = HttpTransportType.WebSockets;
-    options.ApplicationMaxBufferSize = 65536;
-    options.TransportMaxBufferSize = 65536;
-});
-
-app.Use(async (context, next) =>
-{
-    var wwwroot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-
-    if (context.Request.Path.StartsWithSegments("/avatars"))
-    {
-        Console.WriteLine($"[DEBUG] Avatar request: {context.Request.Path}");
-        Console.WriteLine($"[DEBUG] Method: {context.Request.Method}");
-        Console.WriteLine($"[DEBUG] Host: {context.Request.Host}");
-
-        var filePath = Path.Combine(wwwroot, "avatars",
-            context.Request.Path.Value.Replace("/avatars/", ""));
-
-        Console.WriteLine($"[DEBUG] File path: {filePath}");
-        Console.WriteLine($"[DEBUG] File exists: {File.Exists(filePath)}");
-    }
-
-    await next();
-});
-
-app.MapHealthChecks("/health/ready", new HealthCheckOptions
-{
-    Predicate = check => check.Tags.Contains("ready"),
-    ResponseWriter = WriteHealthResponse
-});
-
-app.MapHealthChecks("/health/live", new HealthCheckOptions
-{
-    Predicate = check => check.Tags.Contains("live"),
-    ResponseWriter = WriteHealthResponse
-});
-
-app.Run("http://0.0.0.0:5000");
-
-static Task WriteHealthResponse(HttpContext context, HealthReport report)
-{
-    context.Response.ContentType = "application/json";
-
-    var response = new
-    {
-        status = report.Status.ToString(),
-        checks = report.Entries.Select(e => new
+        catch (Exception ex)
         {
-            name = e.Key,
-            status = e.Value.Status.ToString(),
-            duration = e.Value.Duration
-        }),
-        timestamp = DateTime.UtcNow
-    };
+            var logger = services.GetRequiredService<ILogger<Program>>();
+            logger.LogError(ex, "вќЊ An error occurred while migrating the database");
+            
+            if (app.Environment.IsProduction())
+            {
+                throw; // РџСЂРёР»РѕР¶РµРЅРёРµ РЅРµ Р·Р°РїСѓСЃС‚РёС‚СЃСЏ
+            }
+        }
+    }
 
-    return context.Response.WriteAsync(
-        JsonSerializer.Serialize(response));
+    private static void ConfigureServices(IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
+    {
+        services.AddHttpContextAccessor();
+        services.AddControllers();
+
+        // РќР°СЃС‚СЂРѕР№РєР° Health Checks
+        ConfigureHealthChecks(services, configuration);
+
+        // Swagger
+        services.AddEndpointsApiExplorer();
+        services.AddSwaggerGen();
+
+        // Database
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+
+        // JWT
+        ConfigureJwt(services, configuration);
+
+        // CORS
+        ConfigureCors(services);
+
+        // SignalR
+        ConfigureSignalR(services);
+
+        // Rate Limiting
+        ConfigureRateLimiting(services);
+
+        // Cache
+        services.AddMemoryCache();
+
+        // Options
+        services.Configure<RoomServiceOptions>(configuration.GetSection("Rooms"));
+
+        // Repositories
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
+        // Services
+        services.AddSingleton<JwtTokenService>();
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IChatService, ChatService>();
+        services.AddScoped<IAvatarValidator, AvatarValidator>();
+
+        // Singletons
+        services.AddSingleton<IRoomService, RoomService>();
+
+        // Hosted Services
+        services.AddHostedService<RoomCleanupService>();
+    }
+
+    private static void ConfigureHealthChecks(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddHealthChecks()
+            .AddNpgSql(
+                configuration.GetConnectionString("DefaultConnection")!,
+                name: "database",
+                tags: new[] { "ready", "live" })
+            .AddUrlGroup(
+                new Uri("http://localhost:5000/avatars/male_base.glb"),
+                name: "3d-models",
+                tags: new[] { "ready" })
+            .AddCheck<SignalRHealthCheck>(
+                name: "signalr",
+                tags: new[] { "ready" });
+    }
+
+    private static void ConfigureJwt(IServiceCollection services, IConfiguration configuration)
+    {
+        var jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>();
+        services.AddSingleton(jwtSettings!);
+
+        services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        })
+        .AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = jwtSettings!.Issuer,
+                ValidAudience = jwtSettings.Audience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
+                ClockSkew = TimeSpan.FromMinutes(5)
+            };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    var path = context.HttpContext.Request.Path;
+
+                    if (!string.IsNullOrEmpty(accessToken) &&
+                        (path.StartsWithSegments("/chatHub") || path.Value?.Contains("chatHub") == true))
+                    {
+                        context.Token = accessToken;
+                    }
+                    return Task.CompletedTask;
+                }
+            };
+        });
+    }
+
+    private static void ConfigureCors(IServiceCollection services)
+    {
+        services.AddCors(options =>
+        {
+            options.AddPolicy("AllowMobileApp", policy =>
+            {
+                policy.WithOrigins(
+                        "http://localhost:5000",
+                        "http://127.0.0.1:5000",
+                        "http://10.0.2.2:5000",
+                        "http://192.168.0.103:5000",
+                        "http://127.0.0.1:5500"
+                    )
+                    .AllowAnyMethod()
+                    .AllowAnyHeader()
+                    .AllowCredentials()
+                    .SetIsOriginAllowedToAllowWildcardSubdomains();
+            });
+        });
+    }
+
+    private static void ConfigureSignalR(IServiceCollection services)
+    {
+        services.AddSignalR(hubOptions =>
+        {
+            hubOptions.MaximumParallelInvocationsPerClient = 10;
+            hubOptions.MaximumReceiveMessageSize = 65536;
+            hubOptions.EnableDetailedErrors = false;
+            hubOptions.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
+            hubOptions.KeepAliveInterval = TimeSpan.FromSeconds(15);
+        });
+    }
+
+    private static void ConfigureRateLimiting(IServiceCollection services)
+    {
+        services.AddRateLimiter(options =>
+        {
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(
+                httpContext => RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: httpContext.User.Identity?.Name ??
+                                   httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+                    factory: partition => new FixedWindowRateLimiterOptions
+                    {
+                        AutoReplenishment = true,
+                        PermitLimit = 100,
+                        QueueLimit = 0,
+                        Window = TimeSpan.FromMinutes(1)
+                    }));
+
+            options.AddFixedWindowLimiter("Auth", opt =>
+            {
+                opt.Window = TimeSpan.FromMinutes(1);
+                opt.PermitLimit = 5;
+                opt.QueueLimit = 0;
+            });
+
+            options.OnRejected = async (context, cancellationToken) =>
+            {
+                context.HttpContext.Response.StatusCode = 429;
+                context.HttpContext.Response.ContentType = "application/json";
+                await context.HttpContext.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    error = "Too many requests. Please try again later."
+                }), cancellationToken);
+            };
+        });
+    }
+
+    private static void ConfigureMiddleware(WebApplication app, IHostEnvironment environment)
+    {
+        // Swagger
+        if (environment.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
+
+        // Static files
+        ConfigureStaticFiles(app);
+
+        // Middleware
+        app.UseRateLimiter();
+        app.UseCors("AllowMobileApp");
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        // Request logging middleware
+        app.UseMiddleware<RequestLoggingMiddleware>();
+
+        // Map endpoints
+        app.MapControllers();
+        app.MapHub<ChatHub>("/chatHub", options =>
+        {
+            options.Transports = HttpTransportType.WebSockets;
+            options.ApplicationMaxBufferSize = 65536;
+            options.TransportMaxBufferSize = 65536;
+        });
+
+        // Health checks
+        app.MapHealthChecks("/health/ready", new HealthCheckOptions
+        {
+            Predicate = check => check.Tags.Contains("ready"),
+            ResponseWriter = WriteHealthResponse
+        });
+
+        app.MapHealthChecks("/health/live", new HealthCheckOptions
+        {
+            Predicate = check => check.Tags.Contains("live"),
+            ResponseWriter = WriteHealthResponse
+        });
+
+        app.Run("http://0.0.0.0:5000");
+    }
+
+    private static void ConfigureStaticFiles(WebApplication app)
+    {
+        var provider = new FileExtensionContentTypeProvider();
+        provider.Mappings[".glb"] = "model/gltf-binary";
+        provider.Mappings[".gltf"] = "model/gltf+json";
+
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            ContentTypeProvider = provider,
+            ServeUnknownFileTypes = true,
+            OnPrepareResponse = ctx =>
+            {
+                ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+            }
+        });
+    }
+
+    private static Task WriteHealthResponse(HttpContext context, HealthReport report)
+    {
+        context.Response.ContentType = "application/json";
+
+        var response = new
+        {
+            status = report.Status.ToString(),
+            checks = report.Entries.Select(e => new
+            {
+                name = e.Key,
+                status = e.Value.Status.ToString(),
+                duration = e.Value.Duration,
+                description = e.Value.Description
+            }),
+            timestamp = DateTime.UtcNow
+        };
+
+        return context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
 }
 
 public class SignalRHealthCheck : IHealthCheck
 {
+    private readonly ILogger<SignalRHealthCheck> _logger;
+
+    public SignalRHealthCheck(ILogger<SignalRHealthCheck> logger)
+    {
+        _logger = logger;
+    }
+
     public Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        // Проверяем, что хаб зарегистрирован
-        var hubConfigured = true; // В реальности - проверка
-
-        return Task.FromResult(
-            hubConfigured
-                ? HealthCheckResult.Healthy("SignalR Hub is ready")
-                : HealthCheckResult.Unhealthy("SignalR Hub is not configured"));
+        try
+        {
+            // Р—РґРµСЃСЊ РјРѕР¶РЅРѕ РґРѕР±Р°РІРёС‚СЊ СЂРµР°Р»СЊРЅСѓСЋ РїСЂРѕРІРµСЂРєСѓ SignalR С…Р°Р±Р°
+            // РќР°РїСЂРёРјРµСЂ, РїСЂРѕРІРµСЂРёС‚СЊ, С‡С‚Рѕ С…Р°Р± Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ РІ РјР°СЂС€СЂСѓС‚Р°С…
+            return Task.FromResult(HealthCheckResult.Healthy("SignalR Hub is configured"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SignalR health check failed");
+            return Task.FromResult(HealthCheckResult.Unhealthy("SignalR Hub is not responding", ex));
+        }
     }
 }

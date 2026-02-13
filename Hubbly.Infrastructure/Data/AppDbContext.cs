@@ -1,6 +1,7 @@
 ﻿using Hubbly.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Hubbly.Infrastructure.Data;
 
@@ -13,12 +14,34 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<User>()
-            .HasIndex(u => u.DeviceId)
-            .IsUnique(false);
+        modelBuilder.ApplyConfiguration(new UserConfiguration());
+        modelBuilder.ApplyConfiguration(new RefreshTokenConfiguration());
+    }
+}
 
-        modelBuilder.Entity<User>()
-            .Property(u => u.OwnedAssetIds)
+public class UserConfiguration : IEntityTypeConfiguration<User>
+{
+    public void Configure(EntityTypeBuilder<User> builder)
+    {
+        builder.HasKey(u => u.Id);
+
+        builder.Property(u => u.DeviceId)
+            .IsRequired()
+            .HasMaxLength(255);
+
+        builder.Property(u => u.Nickname)
+            .IsRequired()
+            .HasMaxLength(50);
+
+        builder.Property(u => u.AvatarConfigJson)
+            .IsRequired()
+            .HasDefaultValue("{}")
+            .HasMaxLength(2000);
+
+        builder.Property(u => u.CreatedAt)
+            .IsRequired();
+
+        builder.Property(u => u.OwnedAssetIds)
             .HasConversion(
                 v => string.Join(',', v),
                 v => v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList()
@@ -29,14 +52,56 @@ public class AppDbContext : DbContext
                 c => c.ToList()
             ));
 
-        modelBuilder.Entity<User>()
-            .Property(u => u.AvatarConfigJson)
+        // Индексы
+        builder.HasIndex(u => u.DeviceId)
+            .HasDatabaseName("IX_Users_DeviceId");
+
+        builder.HasIndex(u => u.Nickname)
+            .IsUnique()
+            .HasDatabaseName("IX_Users_Nickname");
+
+        builder.HasIndex(u => u.CreatedAt)
+            .HasDatabaseName("IX_Users_CreatedAt");
+
+        // Связи
+        builder.HasMany(u => u.RefreshTokens)
+            .WithOne()
+            .HasForeignKey(rt => rt.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
+{
+    public void Configure(EntityTypeBuilder<RefreshToken> builder)
+    {
+        builder.HasKey(rt => rt.Id);
+
+        builder.Property(rt => rt.Token)
             .IsRequired()
-            .HasDefaultValue("{}") 
-            .HasMaxLength(2000);
-        
-        modelBuilder.Entity<RefreshToken>()
-            .HasIndex(rt => rt.Token)
-            .IsUnique();
+            .HasMaxLength(500);
+
+        builder.Property(rt => rt.DeviceId)
+            .IsRequired()
+            .HasMaxLength(255);
+
+        builder.Property(rt => rt.ExpiresAt)
+            .IsRequired();
+
+        builder.Property(rt => rt.CreatedAt)
+            .IsRequired();
+
+        builder.Property(rt => rt.LastUsedAt);
+
+        // Индексы
+        builder.HasIndex(rt => rt.Token)
+            .IsUnique()
+            .HasDatabaseName("IX_RefreshTokens_Token");
+
+        builder.HasIndex(rt => new { rt.UserId, rt.DeviceId })
+            .HasDatabaseName("IX_RefreshTokens_UserId_DeviceId");
+
+        builder.HasIndex(rt => rt.ExpiresAt)
+            .HasDatabaseName("IX_RefreshTokens_ExpiresAt");
     }
 }
