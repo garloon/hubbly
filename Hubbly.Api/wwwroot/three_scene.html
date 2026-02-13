@@ -100,7 +100,6 @@
                 this.gender = gender;
                 this.isCurrentUser = isCurrentUser;
                 this.group = null;
-                this.collider = null;
                 this.mixer = null;
                 this.actions = new Map();
                 this.currentAction = null;
@@ -114,7 +113,6 @@
             createPlaceholder() {
                 this.group = new THREE.Group();
 
-                // Визуальная часть (прозрачный куб)
                 const geometry = new THREE.BoxGeometry(0.8, 1.8, 0.4);
                 const color = this.isCurrentUser ? CONFIG.HIGHLIGHT_COLOR : CONFIG.DEFAULT_COLOR;
                 const material = new THREE.MeshPhongMaterial({
@@ -144,24 +142,6 @@
                 shadow.rotation.x = -Math.PI / 2;
                 shadow.position.y = 0.01;
                 this.group.add(shadow);
-
-                const boxGeo = new THREE.BoxGeometry(0.8, 1.8, 0.4);
-                const boxMat = new THREE.MeshPhongMaterial({
-                    color: 0x00ff00,
-                    wireframe: true,
-                    transparent: true,
-                    opacity: 0.3 // В проде 0, для отладки поставь 0.3
-                });
-
-
-                this.collider = new THREE.Mesh(boxGeo, boxMat);
-                this.collider.position.y = 0.9; // Центр куба
-                this.collider.userData.avatarId = this.userId;
-                this.collider.userData.nickname = this.nickname;
-                this.collider.userData.isCurrentUser = this.isCurrentUser;
-                this.collider.userData.isCollider = true;
-
-                this.group.add(this.collider);
 
                 this.group.userData.avatarId = this.userId;
                 this.group.userData.nickname = this.nickname;
@@ -193,9 +173,6 @@
                     const newModel = await this.loadGLBModel();
 
                     if (newModel) {
-                        // Сохраняем коллайдер
-                        const oldCollider = this.collider;
-
                         if (this.group && parent) {
                             parent.remove(this.group);
                         }
@@ -203,22 +180,6 @@
                         this.group = newModel;
                         this.group.position.set(currentX, CONFIG.AVATAR_FOOT_Y, 0);
                         this.group.scale.set(CONFIG.MODEL_SCALE, CONFIG.MODEL_SCALE, CONFIG.MODEL_SCALE);
-
-                        // 🔥 ДОБАВЛЯЕМ КОЛЛАЙДЕР К ЗАГРУЖЕННОЙ МОДЕЛИ
-                        if (oldCollider) {
-                            // Удаляем коллайдер из старой группы
-                            oldCollider.removeFromParent();
-
-                            // Обновляем userData
-                            oldCollider.userData.avatarId = this.userId;
-                            oldCollider.userData.nickname = this.nickname;
-                            oldCollider.userData.isCurrentUser = this.isCurrentUser;
-                            oldCollider.userData.isCollider = true;
-
-                            // Добавляем в новую группу
-                            this.group.add(oldCollider);
-                            this.collider = oldCollider;
-                        }
 
                         this.group.userData.avatarId = this.userId;
                         this.group.userData.nickname = this.nickname;
@@ -359,7 +320,6 @@
                     this.group.parent.remove(this.group);
                 }
                 this.group = null;
-                this.collider = null;
             }
         }
 
@@ -608,16 +568,13 @@
         function setupRaycaster() {
             const canvas = document.getElementById('renderCanvas');
 
-            // 🔥 ОБНОВЛЯЕМ ТОЛЬКО КОЛЛАЙДЕРЫ
             window.__updateClickableObjects = function () {
                 window.clickableObjects = [];
                 scene.traverse(obj => {
-                    // Берем только коллайдеры
-                    if (obj.userData?.isCollider) {
+                    if (obj.userData?.avatarId && obj.isObject3D) {
                         window.clickableObjects.push(obj);
                     }
                 });
-                console.log(`🎯 Коллайдеров в сцене: ${window.clickableObjects.length}`);
             };
 
             window.clickableObjects = [];
@@ -629,35 +586,43 @@
                 if (currentTime - lastClickTime < clickDelay) return;
                 lastClickTime = currentTime;
 
+                console.log('🖱️ CLICK DETECTED!', event.clientX, event.clientY); // 👈 ЛОГ
+
                 const rect = canvas.getBoundingClientRect();
                 const mouse = new THREE.Vector2();
                 mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
                 mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
+                console.log('🎯 Mouse normalized:', mouse.x, mouse.y); // 👈 ЛОГ
+
                 const raycaster = new THREE.Raycaster();
                 raycaster.setFromCamera(mouse, camera);
                 camera.updateMatrixWorld(true);
 
-                // 🔥 РЕЙКАСТ ТОЛЬКО ПО КОЛЛАЙДЕРАМ
+                console.log('🔍 Ray origin:', raycaster.ray.origin.clone()); // 👈 ЛОГ
+                console.log('🔍 Ray direction:', raycaster.ray.direction.clone()); // 👈 ЛОГ
+                console.log('📦 Clickable objects:', window.clickableObjects?.length); // 👈 ЛОГ
+
                 const intersects = raycaster.intersectObjects(window.clickableObjects, true);
+                console.log('🎯 Intersects:', intersects.length); // 👈 ЛОГ
 
                 if (intersects.length > 0) {
-                    // Находим корневой объект с avatarId
                     let obj = intersects[0].object;
-                    while (obj && !obj.userData?.avatarId) {
-                        obj = obj.parent;
-                    }
+                    while (obj && !obj.userData?.avatarId) obj = obj.parent;
 
                     if (obj?.userData?.avatarId) {
-                        console.log('✅ HIT! Avatar ID:', obj.userData.avatarId);
+                        console.log('✅ HIT! Avatar ID:', obj.userData.avatarId); // 👈 ЛОГ
 
                         if (window.hubblyBridge) {
                             window.hubblyBridge.postMessage(JSON.stringify({
                                 type: 'avatar_clicked',
                                 userId: obj.userData.avatarId
                             }));
+                            console.log('📨 Sent via bridge'); // 👈 ЛОГ
                         }
                     }
+                } else {
+                    console.log('❌ No hit'); // 👈 ЛОГ
                 }
             };
 
