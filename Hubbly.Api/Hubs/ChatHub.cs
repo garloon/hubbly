@@ -16,8 +16,16 @@ public class ChatHub : Hub
     private readonly ILogger<ChatHub> _logger;
 
     private static readonly ConcurrentDictionary<string, ConnectedUser> _connectedUsers = new();
-    private static readonly HashSet<string> _usedNonces = new();
-    private static readonly object _nonceLock = new();
+    private static readonly ConcurrentDictionary<string, DateTime> _nonces = new();
+    private static readonly Timer _cleanupTimer;
+    private static readonly TimeSpan NonceLifetime = TimeSpan.FromMinutes(5);
+
+    static ChatHub()
+    {
+        _cleanupTimer = new Timer(CleanupNonces, null,
+            TimeSpan.FromMinutes(1),
+            TimeSpan.FromMinutes(1));
+    }
 
     public ChatHub(
         IChatService chatService,
@@ -190,17 +198,21 @@ public class ChatHub : Hub
 
     public async Task SendMessage(string content, string? actionType = null, long? timestamp = null, string? nonce = null)
     {
-        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        
-        if (!timestamp.HasValue || Math.Abs(now - timestamp.Value) > 30)
+        if (!timestamp.HasValue)
         {
-            await Clients.Caller.SendAsync("ReceiveError", "Message expired");
+            await Clients.Caller.SendAsync("ReceiveError", "Missing timestamp");
             return;
         }
         
-        if (string.IsNullOrEmpty(nonce) || !IsNonceValid(nonce))
+        if (string.IsNullOrEmpty(nonce) || !IsNonceValid(nonce, timestamp.Value))
         {
             await Clients.Caller.SendAsync("ReceiveError", "Invalid message token");
+            return;
+        }
+        
+        if (content?.Length > 500)
+        {
+            await Clients.Caller.SendAsync("ReceiveError", "Message too long");
             return;
         }
 
@@ -214,9 +226,6 @@ public class ChatHub : Hub
                 await Clients.Caller.SendAsync("ReceiveError", "You are not in a room");
                 return;
             }
-
-            _logger.LogDebug("SendMessage called by user {UserId}. Content: '{Content}', ActionType: '{ActionType}'",
-                userId, content, actionType ?? "null");
 
             var messageDto = await _chatService.SendMessageAsync(userId, content, actionType);
 
@@ -282,26 +291,50 @@ public class ChatHub : Hub
         return Task.FromResult(_connectedUsers.Count);
     }
 
-    private bool IsNonceValid(string nonce)
+    private bool IsNonceValid(string nonce, long clientTimestamp)
     {
-        lock (_nonceLock)
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var timeDiff = Math.Abs(now - clientTimestamp);
+        
+        if (timeDiff > 30)
         {
-            if (_usedNonces.Contains(nonce))
-                return false;
-
-            _usedNonces.Add(nonce);
+            Console.WriteLine($"⏰ Nonce rejected: time diff {timeDiff}s");
+            return false;
+        }
+        
+        if (!_nonces.TryAdd(nonce, DateTime.UtcNow))
+        {
+            Console.WriteLine($"🔄 Nonce rejected: already used");
+            return false;
         }
 
-        // Очистка через 5 минут
-        _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(_ =>
-        {
-            lock (_nonceLock)
-            {
-                _usedNonces.Remove(nonce);
-            }
-        });
-
         return true;
+    }
+
+    private static void CleanupNonces(object state)
+    {
+        try
+        {
+            var cutoff = DateTime.UtcNow.Subtract(NonceLifetime);
+            var expiredNonces = _nonces
+                .Where(kvp => kvp.Value < cutoff)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            foreach (var nonce in expiredNonces)
+            {
+                _nonces.TryRemove(nonce, out _);
+            }
+
+            if (expiredNonces.Any())
+            {
+                Console.WriteLine($"🧹 Cleaned up {expiredNonces.Count} expired nonces");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error cleaning nonces: {ex.Message}");
+        }
     }
 }
 
