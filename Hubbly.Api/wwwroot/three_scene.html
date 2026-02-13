@@ -72,15 +72,14 @@
 
         const CONFIG = {
             SERVER_BASE_URL: "http://89.169.46.33:5000/",
-            SLOT_COUNT: 10,
             SLOT_SPACING: 2.0,
             CAMERA_DISTANCE: 2.5,
             SCROLL_SENSITIVITY: 0.005,
             HIGHLIGHT_COLOR: 0x8b5cf6,
             DEFAULT_COLOR: 0x3b82f6,
             MODEL_SCALE: 1.8,
-            AVATAR_FOOT_Y: 0.2,
-            AVATAR_HEIGHT: 1.8,
+            AVATAR_FOOT_Y: 0.0,
+            VISIBLE_RANGE: 3,
             ANIMATIONS: {
                 idle: 'idle.glb',
                 clap: 'clapping.glb'
@@ -151,13 +150,12 @@
                     color: 0x00ff00,
                     wireframe: true,
                     transparent: true,
-                    opacity: 0.3
+                    opacity: 0.0
                 });
 
                 this.collider = new THREE.Mesh(boxGeo, boxMat);
                 this.collider.position.y = 0.9;
 
-                // ВАЖНО: устанавливаем userData ДО добавления в группу
                 this.collider.userData = {
                     avatarId: this.userId,
                     nickname: this.nickname,
@@ -399,29 +397,42 @@
 
         class AvatarManager {
             constructor() {
-                this.avatars = new Map();
-                this.availableSlots = Array.from({ length: CONFIG.SLOT_COUNT }, (_, i) => i);
+                this.avatars = new Map(); // userId -> Avatar
+                this.positions = new Map(); // userId -> x позиция
+                this.availableSlots = []; // Свободные индексы
+                this.nextSlot = 0;
+
+                // Создаем слоты для 50 человек
+                for (let i = 0; i < 50; i++) {
+                    this.availableSlots.push(i);
+                }
             }
 
             addAvatar(userId, nickname, gender, isCurrentUser = false) {
                 if (this.avatars.has(userId)) {
-                    console.log(`⏭️ Avatar ${userId} already exists`);
+                    console.log(`Avatar ${userId} already exists`);
                     return false;
                 }
 
                 if (this.availableSlots.length === 0) {
-                    console.error('No available slots');
+                    console.warn('No available slots');
                     return false;
                 }
 
+                // Берем первый свободный слот
                 const slotIndex = this.availableSlots.shift();
+                const xPos = (slotIndex - 25) * CONFIG.SLOT_SPACING; // Центрируем (от -25 до 24)
+
                 const avatar = new Avatar(userId, nickname, gender, isCurrentUser);
-                avatar.setSlot(slotIndex);
+                avatar.setPosition(xPos);
 
                 this.avatars.set(userId, avatar);
+                this.positions.set(userId, { slot: slotIndex, x: xPos });
+
                 scene.add(avatar.group);
 
-                setTimeout(() => avatar.loadModel(), 300 + (this.getAvatarCount() * 200));
+                // Загружаем модель сразу (в PRE-MVP 50 человек - это максимум, справится)
+                setTimeout(() => avatar.loadModel(), 300 + (this.avatars.size * 100));
 
                 if (window.__updateClickableObjects) {
                     setTimeout(() => window.__updateClickableObjects(), 500);
@@ -434,8 +445,14 @@
                 const avatar = this.avatars.get(userId);
                 if (!avatar) return false;
 
-                this.availableSlots.push(avatar.slotIndex);
-                this.availableSlots.sort((a, b) => a - b);
+                // Возвращаем слот в пул
+                const position = this.positions.get(userId);
+                if (position) {
+                    this.availableSlots.push(position.slot);
+                    this.availableSlots.sort((a, b) => a - b);
+                }
+
+                this.positions.delete(userId);
 
                 avatar.dispose();
                 this.avatars.delete(userId);
@@ -454,7 +471,13 @@
             clearAll() {
                 for (const avatar of this.avatars.values()) avatar.dispose();
                 this.avatars.clear();
-                this.availableSlots = Array.from({ length: CONFIG.SLOT_COUNT }, (_, i) => i);
+                this.positions.clear();
+
+                // Восстанавливаем слоты
+                this.availableSlots = [];
+                for (let i = 0; i < 50; i++) {
+                    this.availableSlots.push(i);
+                }
             }
 
             updateAvatars(deltaTime) {
@@ -479,6 +502,8 @@
                 this.startX = 0;
                 this.currentX = 0;
                 this.initialized = false;
+                this.scrollVelocity = 0;
+                this.lastDragTime = 0;
 
                 this.setupCamera();
                 this.setupEventListeners();
@@ -517,20 +542,62 @@
                 this.isDragging = true;
                 this.startX = event.clientX;
                 this.currentX = this.camera.position.x;
+                this.lastDragTime = Date.now();
+                this.scrollVelocity = 0;
             }
 
             onMouseMove(event) {
                 if (!this.isDragging) return;
                 event.preventDefault();
+
                 const deltaX = event.clientX - this.startX;
+                const now = Date.now();
+                const dt = now - this.lastDragTime;
+
+                if (dt > 0) {
+                    this.scrollVelocity = (deltaX / dt) * 0.5; // Сохраняем скорость для инерции
+                }
+
                 this.targetX = this.currentX - deltaX * CONFIG.SCROLL_SENSITIVITY;
                 this.updateCameraPosition();
+                this.lastDragTime = now;
             }
 
             onMouseUp() {
                 if (!this.isDragging) return;
                 this.isDragging = false;
-                this.snapToNearestSlot();
+
+                // Добавляем инерцию
+                if (Math.abs(this.scrollVelocity) > 0.1) {
+                    this.startInertia();
+                } else {
+                    this.snapToNearestSlot();
+                }
+            }
+
+            startInertia() {
+                const inertia = () => {
+                    if (this.isDragging) return;
+
+                    this.scrollVelocity *= 0.95; // Затухание
+
+                    if (Math.abs(this.scrollVelocity) < 0.01) {
+                        this.snapToNearestSlot();
+                        return;
+                    }
+
+                    this.targetX += this.scrollVelocity * 0.5;
+
+                    // Ограничиваем диапазон
+                    const maxX = 24 * CONFIG.SLOT_SPACING;
+                    const minX = -25 * CONFIG.SLOT_SPACING;
+                    this.targetX = Math.max(minX, Math.min(maxX, this.targetX));
+
+                    this.updateCameraPosition();
+                    requestAnimationFrame(inertia);
+                };
+
+                requestAnimationFrame(inertia);
             }
 
             onTouchStart(event) {
@@ -539,20 +606,36 @@
                     this.isDragging = true;
                     this.startX = event.touches[0].clientX;
                     this.currentX = this.camera.position.x;
+                    this.lastDragTime = Date.now();
+                    this.scrollVelocity = 0;
                 }
             }
 
             onTouchMove(event) {
                 if (!this.isDragging || event.touches.length !== 1) return;
                 event.preventDefault();
+
                 const deltaX = event.touches[0].clientX - this.startX;
+                const now = Date.now();
+                const dt = now - this.lastDragTime;
+
+                if (dt > 0) {
+                    this.scrollVelocity = (deltaX / dt) * 0.5;
+                }
+
                 this.targetX = this.currentX - deltaX * CONFIG.SCROLL_SENSITIVITY;
                 this.updateCameraPosition();
+                this.lastDragTime = now;
             }
 
             onTouchEnd() {
                 this.isDragging = false;
-                this.snapToNearestSlot();
+
+                if (Math.abs(this.scrollVelocity) > 0.1) {
+                    this.startInertia();
+                } else {
+                    this.snapToNearestSlot();
+                }
             }
 
             onWindowResize() {
@@ -563,25 +646,30 @@
             }
 
             updateCameraPosition() {
-                const lerpFactor = 0.2;
+                // Плавное движение
+                const lerpFactor = this.isDragging ? 0.3 : 0.1;
                 const dx = this.targetX - this.camera.position.x;
                 this.camera.position.x += dx * lerpFactor;
             }
 
             snapToNearestSlot() {
-                const targetSlot = Math.round(this.camera.position.x / CONFIG.SLOT_SPACING);
-                const maxSlots = Math.floor(CONFIG.SLOT_COUNT / 2);
-                const minSlot = -maxSlots;
-                this.targetX = Math.max(minSlot, Math.min(maxSlots, targetSlot)) * CONFIG.SLOT_SPACING;
+                // Центрируем на ближайшем слоте
+                const slotNumber = Math.round(this.camera.position.x / CONFIG.SLOT_SPACING);
+                // Ограничиваем от -25 до 24
+                const clampedSlot = Math.max(-25, Math.min(24, slotNumber));
+                this.targetX = clampedSlot * CONFIG.SLOT_SPACING;
             }
 
             update() {
-                if (!this.isDragging) this.updateCameraPosition();
+                if (!this.isDragging) {
+                    this.updateCameraPosition();
+                }
 
+                // Центрируем на текущем пользователе при первом входе
                 if (!this.initialized && window.currentUserId) {
                     const myAvatar = avatarManager?.getAvatar(window.currentUserId);
-                    if (myAvatar?.slotIndex !== undefined) {
-                        this.targetX = (myAvatar.slotIndex - (CONFIG.SLOT_COUNT - 1) / 2) * CONFIG.SLOT_SPACING;
+                    if (myAvatar?.group?.position?.x !== undefined) {
+                        this.targetX = myAvatar.group.position.x;
                         this.initialized = true;
                     }
                 }
@@ -658,7 +746,6 @@
                         window.clickableObjects.push(obj);
                     }
                 });
-                console.log(`🎯 Коллайдеров в сцене: ${window.clickableObjects.length}`);
             };
 
             window.clickableObjects = [];
@@ -702,7 +789,6 @@
                     }
 
                     if (obj?.userData?.avatarId) {
-                        console.log('✅ HIT! Avatar ID:', obj.userData.avatarId);
 
                         try {
                             if (window.hubblyBridge && typeof window.hubblyBridge.postMessage === 'function') {
