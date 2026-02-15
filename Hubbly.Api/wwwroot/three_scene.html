@@ -78,11 +78,12 @@
             HIGHLIGHT_COLOR: 0x8b5cf6,
             DEFAULT_COLOR: 0x3b82f6,
             MODEL_SCALE: 1.8,
-            AVATAR_FOOT_Y: -0.4,
+            AVATAR_FOOT_Y: -0.6,
             VISIBLE_RANGE: 3,
             ANIMATIONS: {
                 idle: 'idle.glb',
-                clap: 'clapping.glb'
+                clap: 'clapping.glb',
+                wave: 'waving.glb'
             }
         };
 
@@ -295,6 +296,8 @@
                         animationFile = this.gender === 'male' ? 'male_idle.glb' : 'female_idle.glb';
                     } else if (animationName === 'clap') {
                         animationFile = this.gender === 'male' ? 'male_clapping.glb' : 'female_clapping.glb';
+                    } else if (animationName === 'wave') {
+                        animationFile = this.gender === 'male' ? 'male_waving.glb' : 'female_waving.glb';
                     } else {
                         // Для других анимаций (если добавятся)
                         animationFile = `${this.gender}_${animationName}.glb`;
