@@ -25,14 +25,13 @@ jobs:
     
     - name: Publish project
       run: |
-        # Публикуем проект
         dotnet publish Hubbly.Api/Hubbly.Api.csproj \
           --configuration Release \
           --output ./publish \
           --no-build \
           --no-restore
         
-        # Проверяем что three_scene.html на месте
+        # Проверяем наличие three_scene.html
         if [ -f "./publish/wwwroot/three_scene.html" ]; then
           echo "✅ three_scene.html is present"
         else
@@ -64,7 +63,7 @@ jobs:
         port: ${{ secrets.SERVER_PORT }}
         key: ${{ secrets.SERVER_SSH_KEY }}
         script: |
-          set -e  # Останавливаемся при ошибке
+          set -e
           
           echo "🚀 Starting deployment..."
           
@@ -75,13 +74,9 @@ jobs:
           tar -xzf /tmp/publish.tar.gz -C /opt/hubbly-publish-new
           rm /tmp/publish.tar.gz
           
-          # 2. СОХРАНЯЕМ старый wwwroot (файлы, загруженные через админку)
-          echo "💾 Preserving existing wwwroot files..."
-          if [ -d "/opt/hubbly-publish/wwwroot/avatars" ]; then
-            mkdir -p /opt/hubbly-publish-new/wwwroot
-            cp -r /opt/hubbly-publish/wwwroot/avatars /opt/hubbly-publish-new/wwwroot/ 2>/dev/null || true
-            cp -r /opt/hubbly-publish/wwwroot/animations /opt/hubbly-publish-new/wwwroot/ 2>/dev/null || true
-          fi
+          # 2. ✅ МОДЕЛИ МЕНЯЮТСЯ АВТОМАТИЧЕСКИ!
+          #    Просто копируем новые модели из репозитория
+          echo "🆕 Using new avatar models from repository"
           
           # 3. Проверяем наличие three_scene.html
           if [ ! -f "/opt/hubbly-publish-new/wwwroot/three_scene.html" ]; then
@@ -89,19 +84,27 @@ jobs:
             exit 1
           fi
           
-          # 4. Меняем местами (blue-green deployment)
+          # 4. Создаем бэкап старых моделей (на всякий случай)
+          echo "💾 Creating backup of old models..."
+          mkdir -p /opt/hubbly-backups/$(date +%Y%m%d_%H%M%S)
+          if [ -d "/opt/hubbly-publish/wwwroot/avatars" ]; then
+            cp -r /opt/hubbly-publish/wwwroot/avatars /opt/hubbly-backups/$(date +%Y%m%d_%H%M%S)/
+          fi
+          
+          # 5. Меняем местами
           echo "🔄 Switching versions..."
           rm -rf /opt/hubbly-publish-old
           mv /opt/hubbly-publish /opt/hubbly-publish-old 2>/dev/null || true
           mv /opt/hubbly-publish-new /opt/hubbly-publish
           
-          # 5. Перезапускаем сервис
+          # 6. Перезапускаем сервис
           echo "🔄 Restarting service..."
           systemctl restart hubbly
           sleep 5
           
-          # 6. Проверяем статус
+          # 7. Проверяем статус
           echo "📊 Service status:"
           systemctl status hubbly --no-pager
           
           echo "✅ Deployment completed successfully!"
+          echo "📁 New models deployed to /opt/hubbly-publish/wwwroot/avatars/"
