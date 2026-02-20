@@ -118,7 +118,7 @@ public class Program
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
         // Services
-        services.AddSingleton<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IChatService, ChatService>();

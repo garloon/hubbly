@@ -11,4 +11,5 @@ public interface IRefreshTokenRepository
     Task CleanupOldDeviceTokensAsync(Guid userId, string deviceId, int keepLast = 3);
     Task RevokeAllForUserAsync(Guid userId);
     Task RevokeAllForDeviceAsync(Guid userId, string deviceId);
+    Task<bool> HasActiveRefreshTokensAsync(Guid userId);
 }

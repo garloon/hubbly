@@ -1,5 +1,6 @@
 ﻿using Hubbly.Domain.Common;
 using Hubbly.Domain.Services;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -13,13 +14,21 @@ public class JwtTokenService : IJwtTokenService
 {
     private readonly JwtSettings _jwtSettings;
     private readonly ILogger<JwtTokenService> _logger;
+    private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IMemoryCache _cache;
+    private const string CacheKeyPrefix = "jwt_user_active_";
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
     public JwtTokenService(
         JwtSettings jwtSettings,
-        ILogger<JwtTokenService> logger)
+        ILogger<JwtTokenService> logger,
+        IRefreshTokenRepository refreshTokenRepository,
+        IMemoryCache cache)
     {
         _jwtSettings = jwtSettings ?? throw new ArgumentNullException(nameof(jwtSettings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _refreshTokenRepository = refreshTokenRepository ?? throw new ArgumentNullException(nameof(refreshTokenRepository));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     }
 
     #region Public methods
@@ -73,9 +82,9 @@ public class JwtTokenService : IJwtTokenService
         }
     }
 
-    public bool ValidateAccessToken(string token, out ClaimsPrincipal? principal)
+    public async Task<(bool isValid, ClaimsPrincipal? principal)> ValidateAccessTokenAsync(string token)
     {
-        principal = null;
+        ClaimsPrincipal? principal = null;
 
         try
         {
@@ -95,22 +104,52 @@ public class JwtTokenService : IJwtTokenService
             }, out _);
 
             _logger.LogTrace("Token validated successfully");
-            return true;
+
+            // Extract userId and check for active refresh tokens
+            var userId = GetUserIdFromToken(token);
+            if (userId.HasValue)
+            {
+                var cacheKey = $"{CacheKeyPrefix}{userId.Value}";
+                if (!_cache.TryGetValue(cacheKey, out bool hasActiveTokens))
+                {
+                    // Cache miss - query database
+                    hasActiveTokens = await _refreshTokenRepository.HasActiveRefreshTokensAsync(userId.Value);
+                    _cache.Set(cacheKey, hasActiveTokens, CacheDuration);
+                    _logger.LogDebug("Cached active token status for user {UserId}: {HasActive}", userId.Value, hasActiveTokens);
+                }
+                else
+                {
+                    _logger.LogDebug("Cache hit for user {UserId} active token status: {HasActive}", userId.Value, hasActiveTokens);
+                }
+
+                if (!hasActiveTokens)
+                {
+                    _logger.LogWarning("User {UserId} has no active refresh tokens - invalidating access token", userId.Value);
+                    return (false, null);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Could not extract userId from token for revocation check");
+                return (false, null);
+            }
+
+            return (true, principal);
         }
         catch (SecurityTokenExpiredException)
         {
             _logger.LogDebug("Token expired");
-            return false;
+            return (false, null);
         }
         catch (SecurityTokenException ex)
         {
             _logger.LogWarning(ex, "Token validation failed");
-            return false;
+            return (false, null);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error validating token");
-            return false;
+            return (false, null);
         }
     }
 

@@ -6,6 +6,6 @@ public interface IJwtTokenService
 {
     string GenerateAccessToken(Guid userId, string nickname);
     string GenerateRefreshToken();
-    bool ValidateAccessToken(string token, out ClaimsPrincipal? principal);
+    Task<(bool isValid, ClaimsPrincipal? principal)> ValidateAccessTokenAsync(string token);
     Guid? GetUserIdFromToken(string token);
 }

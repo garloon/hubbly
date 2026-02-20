@@ -150,5 +150,19 @@ public class RefreshTokenRepository : IRefreshTokenRepository
             tokens.Count, userId);
     }
 
+    public async Task<bool> HasActiveRefreshTokensAsync(Guid userId)
+    {
+        _logger.LogDebug("Checking if user {UserId} has active refresh tokens", userId);
+
+        var hasActive = await _context.RefreshTokens
+            .Where(rt => rt.UserId == userId &&
+                        !rt.IsRevoked &&
+                        rt.ExpiresAt > DateTimeOffset.UtcNow)
+            .AnyAsync();
+
+        _logger.LogDebug("User {UserId} has {HasActive} active refresh tokens", userId, hasActive);
+        return hasActive;
+    }
+
     #endregion
 }
