@@ -18,10 +18,19 @@ jobs:
         dotnet-version: '8.0.x'
     
     - name: Restore dependencies
-      run: dotnet restore Hubbly.Api/Hubbly.Api.csproj
+      run: dotnet restore Hubbly.Backend.sln
     
     - name: Build
-      run: dotnet build Hubbly.Api/Hubbly.Api.csproj --configuration Release --no-restore
+      run: dotnet build Hubbly.Backend.sln --configuration Release --no-restore
+    
+    - name: Run tests
+      run: |
+        dotnet test Hubbly.Application.Tests/Hubbly.Application.Tests.csproj \
+          --configuration Release \
+          --no-build \
+          --collect:"XPlat Code Coverage" \
+          --logger "trx;LogFileName=test_results.trx"
+      continue-on-error: false
     
     - name: Publish project
       run: |
