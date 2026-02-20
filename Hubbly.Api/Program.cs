@@ -1,6 +1,10 @@
-﻿using Hubbly.Api.Hubs;
+﻿using Hubbly.Api.Controllers;
+using Hubbly.Api.Hubs;
 using Hubbly.Api.Middleware;
+using Hubbly.Api.Validators;
 using Hubbly.Application.Services;
+using FluentValidation;
+using Hubbly.Domain.Events;
 using Hubbly.Domain.Common;
 using Hubbly.Domain.Services;
 using Hubbly.Infrastructure.Data;
@@ -14,6 +18,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
@@ -72,6 +79,12 @@ public class Program
     {
         services.AddHttpContextAccessor();
         services.AddControllers();
+
+        // FluentValidation - manual registration
+        services.AddSingleton<IValidator<GuestAuthRequest>, GuestAuthRequestValidator>();
+        services.AddSingleton<IValidator<RefreshTokenRequest>, RefreshTokenRequestValidator>();
+        services.AddSingleton<IValidator<UpdateNicknameRequest>, UpdateNicknameRequestValidator>();
+        services.AddSingleton<IValidator<UpdateAvatarRequest>, UpdateAvatarRequestValidator>();
 
         // Configure health checks
         ConfigureHealthChecks(services, configuration);
@@ -145,6 +158,33 @@ public class Program
             options.ExpirationScanFrequency = TimeSpan.FromMinutes(1);
         });
 
+        // OpenTelemetry Configuration
+        services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource
+                .AddService(serviceName: "Hubbly", serviceVersion: "1.0.0"))
+            .WithTracing(tracing =>
+            {
+                tracing
+                    .AddAspNetCoreInstrumentation(options =>
+                    {
+                        options.RecordException = true;
+                        options.EnrichWithHttpRequest = (enrich, request) =>
+                        {
+                            enrich.SetTag("request.protocol", request.Protocol);
+                            enrich.SetTag("request.scheme", request.Scheme);
+                        };
+                    })
+                    .AddHttpClientInstrumentation()
+                    .AddConsoleExporter();
+            })
+            .WithMetrics(metrics =>
+            {
+                metrics
+                    .AddAspNetCoreInstrumentation()
+                    .AddHttpClientInstrumentation()
+                    .AddConsoleExporter();
+            });
+
         // Options
         services.Configure<RoomServiceOptions>(configuration.GetSection("Rooms"));
 
@@ -158,6 +198,10 @@ public class Program
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IAvatarValidator, AvatarValidator>();
+        
+        // Domain Events
+        services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
+        services.AddScoped<LoggingEventHandler>();
 
         // Singletons
         services.AddSingleton<IRoomService, RoomService>();

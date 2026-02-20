@@ -1,5 +1,6 @@
 ﻿using Hubbly.Domain.Dtos;
 using Hubbly.Domain.Entities;
+using Hubbly.Domain.Events;
 using Hubbly.Domain.Services;
 using Microsoft.Extensions.Logging;
 
@@ -9,6 +10,7 @@ public class ChatService : IChatService
 {
     private readonly IUserRepository _userRepository;
     private readonly ILogger<ChatService> _logger;
+    private readonly IDomainEventDispatcher _eventDispatcher;
 
     private static readonly HashSet<string> ValidActionTypes = new()
     {
@@ -17,10 +19,12 @@ public class ChatService : IChatService
 
     public ChatService(
         IUserRepository userRepository,
-        ILogger<ChatService> logger)
+        ILogger<ChatService> logger,
+        IDomainEventDispatcher eventDispatcher)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
     }
 
     #region Public methods
@@ -51,6 +55,10 @@ public class ChatService : IChatService
                 var messageDto = CreateMessageDto(senderId, sender.Nickname, content, actionType);
 
                 _logger.LogInformation("Message sent by {SenderNickname}", sender.Nickname);
+
+                // Dispatch MessageSentEvent
+                var messageSentEvent = new MessageSentEvent(senderId, messageDto);
+                await _eventDispatcher.DispatchAsync(messageSentEvent);
 
                 return messageDto;
             }

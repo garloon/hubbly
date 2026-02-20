@@ -1,9 +1,10 @@
-﻿using Hubbly.Domain.Services;
+﻿using Hubbly.Domain.Events;
+using Hubbly.Domain.Services;
 using System.Text.Json;
 
 namespace Hubbly.Domain.Entities;
 
-public class User
+public class User : BaseEntity
 {
     public Guid Id { get; private set; }
     public string DeviceId { get; private set; } = null!;
@@ -26,6 +27,8 @@ public class User
 
         // Initialize avatar
         AvatarConfigJson = InitializeAvatarConfig(avatarConfigJson);
+
+        RaiseDomainEvent(new UserCreatedEvent(Id, deviceId, nickname));
     }
 
     #region Public methods
@@ -38,7 +41,10 @@ public class User
         if (newNickname.Length > 50)
             throw new ArgumentException("Nickname cannot exceed 50 characters.");
 
+        var oldNickname = Nickname;
         Nickname = newNickname;
+
+        RaiseDomainEvent(new UserNicknameUpdatedEvent(Id, oldNickname, newNickname));
     }
 
     public void UpdateAvatarConfig(string newConfigJson, IAvatarValidator? validator = null)
@@ -47,7 +53,10 @@ public class User
             throw new ArgumentException("Avatar config cannot be empty.");
 
         var config = ValidateAndParseAvatarConfig(newConfigJson, validator);
+        var oldConfig = AvatarConfigJson;
         AvatarConfigJson = config.ToJson();
+
+        RaiseDomainEvent(new UserAvatarUpdatedEvent(Id, AvatarConfigJson));
     }
 
     public AvatarConfig GetAvatarConfig() =>

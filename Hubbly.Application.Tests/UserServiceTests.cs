@@ -2,6 +2,7 @@ using FluentAssertions;
 using Hubbly.Application.Services;
 using Hubbly.Domain.Dtos;
 using Hubbly.Domain.Entities;
+using Hubbly.Domain.Events;
 using Hubbly.Domain.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -12,16 +13,19 @@ public class UserServiceTests
 {
     private readonly Mock<IUserRepository> _userRepositoryMock;
     private readonly Mock<ILogger<UserService>> _loggerMock;
+    private readonly Mock<IDomainEventDispatcher> _eventDispatcherMock;
     private readonly UserService _userService;
 
     public UserServiceTests()
     {
         _userRepositoryMock = new Mock<IUserRepository>();
         _loggerMock = new Mock<ILogger<UserService>>();
+        _eventDispatcherMock = new Mock<IDomainEventDispatcher>();
 
         _userService = new UserService(
             _userRepositoryMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            _eventDispatcherMock.Object);
     }
 
     [Fact]

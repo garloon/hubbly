@@ -27,11 +27,6 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> AuthenticateGuest([FromBody] GuestAuthRequest request)
     {
-       if (request == null)
-       {
-           return BadRequest(new { error = "Request cannot be null" });
-       }
-
        using (_logger.BeginScope(new Dictionary<string, object>
        {
            ["DeviceId"] = request.DeviceId,
@@ -42,8 +37,6 @@ public class AuthController : ControllerBase
 
            try
            {
-               ValidateGuestRequest(request);
-
                var response = await _authService.AuthenticateGuestAsync(
                    request.DeviceId,
                    request.AvatarConfigJson);
@@ -51,11 +44,6 @@ public class AuthController : ControllerBase
                _logger.LogInformation("Guest authenticated successfully: UserId {UserId}", response.User.Id);
 
                return Ok(response);
-           }
-           catch (ArgumentException ex)
-           {
-               _logger.LogWarning(ex, "Invalid guest request");
-               return BadRequest(new { error = ex.Message });
            }
            catch (Exception ex)
            {
@@ -72,11 +60,6 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
     {
-       if (request == null)
-       {
-           return BadRequest(new { error = "Request cannot be null" });
-       }
-
        using (_logger.BeginScope(new Dictionary<string, object>
        {
            ["DeviceId"] = request.DeviceId,
@@ -87,8 +70,6 @@ public class AuthController : ControllerBase
 
            try
            {
-               ValidateRefreshRequest(request);
-
                var response = await _authService.RefreshTokenAsync(
                    request.RefreshToken,
                    request.DeviceId);
@@ -96,11 +77,6 @@ public class AuthController : ControllerBase
                _logger.LogInformation("Token refreshed successfully for user {UserId}", response.User.Id);
 
                return Ok(response);
-           }
-           catch (ArgumentException ex)
-           {
-               _logger.LogWarning(ex, "Invalid refresh request");
-               return BadRequest(new { error = ex.Message });
            }
            catch (UnauthorizedAccessException ex)
            {
@@ -114,41 +90,6 @@ public class AuthController : ControllerBase
            }
        }
    }
-
-    #endregion
-
-    #region Private methods
-
-    private void ValidateGuestRequest(GuestAuthRequest? request)
-    {
-        if (request == null)
-        {
-            throw new ArgumentException("Request cannot be null");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.DeviceId))
-        {
-            throw new ArgumentException("DeviceId is required");
-        }
-    }
-
-    private void ValidateRefreshRequest(RefreshTokenRequest? request)
-    {
-        if (request == null)
-        {
-            throw new ArgumentException("Request cannot be null");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.RefreshToken))
-        {
-            throw new ArgumentException("Refresh token is required");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.DeviceId))
-        {
-            throw new ArgumentException("DeviceId is required");
-        }
-    }
 
     #endregion
 }

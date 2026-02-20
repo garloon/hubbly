@@ -60,11 +60,6 @@ public class UserController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateNickname([FromBody] UpdateNicknameRequest request)
     {
-       if (request == null)
-       {
-           return BadRequest(new { error = "Request cannot be null" });
-       }
-
        var userId = GetCurrentUserId();
 
        using (_logger.BeginScope(new Dictionary<string, object>
@@ -77,17 +72,10 @@ public class UserController : ControllerBase
 
            try
            {
-               ValidateUpdateNicknameRequest(request);
-
                await _userService.UpdateUserNicknameAsync(userId, request.NewNickname);
 
                _logger.LogInformation("Nickname updated successfully");
                return NoContent();
-           }
-           catch (ArgumentException ex)
-           {
-               _logger.LogWarning(ex, "Invalid nickname");
-               return BadRequest(new { error = ex.Message });
            }
            catch (KeyNotFoundException ex)
            {
@@ -121,22 +109,10 @@ public class UserController : ControllerBase
 
             try
             {
-                ValidateUpdateAvatarRequest(request);
-
                 await _userService.UpdateUserAvatarAsync(userId, request!.AvatarConfigJson);
 
                 _logger.LogInformation("Avatar updated successfully");
                 return NoContent();
-            }
-            catch (ArgumentException ex)
-            {
-                _logger.LogWarning(ex, "Invalid avatar config");
-                return BadRequest(new { error = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogWarning(ex, "Invalid avatar configuration");
-                return BadRequest(new { error = ex.Message });
             }
             catch (KeyNotFoundException ex)
             {
@@ -164,42 +140,6 @@ public class UserController : ControllerBase
             throw new UnauthorizedAccessException("Invalid user identity");
         }
         return userId;
-    }
-
-    private void ValidateUpdateNicknameRequest(UpdateNicknameRequest? request)
-    {
-        if (request == null)
-        {
-            throw new ArgumentException("Request cannot be null");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.NewNickname))
-        {
-            throw new ArgumentException("Nickname cannot be empty");
-        }
-
-        if (request.NewNickname.Length > 50)
-        {
-            throw new ArgumentException("Nickname cannot exceed 50 characters");
-        }
-    }
-
-    private void ValidateUpdateAvatarRequest(UpdateAvatarRequest? request)
-    {
-        if (request == null)
-        {
-            throw new ArgumentException("Request cannot be null");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.AvatarConfigJson))
-        {
-            throw new ArgumentException("Avatar config cannot be empty");
-        }
-
-        if (request.AvatarConfigJson.Length > 2000)
-        {
-            throw new ArgumentException("Avatar config cannot exceed 2000 characters");
-        }
     }
 
     #endregion

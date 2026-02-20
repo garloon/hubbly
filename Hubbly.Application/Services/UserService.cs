@@ -1,7 +1,9 @@
 ﻿using Hubbly.Domain.Dtos;
 using Hubbly.Domain.Entities;
+using Hubbly.Domain.Events;
 using Hubbly.Domain.Services;
 using Microsoft.Extensions.Logging;
+using System.Linq;
 
 namespace Hubbly.Application.Services;
 
@@ -9,13 +11,16 @@ public class UserService : IUserService
 {
     private readonly IUserRepository _userRepository;
     private readonly ILogger<UserService> _logger;
+    private readonly IDomainEventDispatcher _eventDispatcher;
 
     public UserService(
         IUserRepository userRepository,
-        ILogger<UserService> logger)
+        ILogger<UserService> logger,
+        IDomainEventDispatcher eventDispatcher)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _eventDispatcher = eventDispatcher ?? throw new ArgumentNullException(nameof(eventDispatcher));
     }
 
     #region Public methods
@@ -58,8 +63,14 @@ public class UserService : IUserService
 
                 var user = await GetUserAsync(userId);
 
+                var oldNickname = user.Nickname;
                 user.UpdateNickname(newNickname);
                 await _userRepository.UpdateAsync(user);
+
+                // Dispatch domain event
+                var domainEvents = user.DomainEvents.ToList();
+                await _eventDispatcher.DispatchAllAsync(domainEvents);
+                user.ClearDomainEvents();
 
                 _logger.LogInformation("Updated nickname for user {UserId}", userId);
             }
@@ -92,6 +103,11 @@ public class UserService : IUserService
 
                 user.UpdateAvatarConfig(newAvatarConfigJson);
                 await _userRepository.UpdateAsync(user);
+
+                // Dispatch domain events
+                var domainEvents = user.DomainEvents.ToList();
+                await _eventDispatcher.DispatchAllAsync(domainEvents);
+                user.ClearDomainEvents();
 
                 _logger.LogInformation("Updated avatar for user {UserId}", userId);
             }
