@@ -179,14 +179,16 @@ public class Program
                         };
                     })
                     .AddHttpClientInstrumentation()
-                    .AddConsoleExporter();
+                    .AddConsoleExporter()
+                    .AddOtlpExporter(); // Send traces to OTLP Collector
             })
             .WithMetrics(metrics =>
             {
                 metrics
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddConsoleExporter();
+                    .AddConsoleExporter()
+                    .AddOtlpExporter(); // Send metrics to OTLP Collector
             });
 
         // Options

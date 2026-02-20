@@ -1,0 +1,59 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: hubbly-postgres
+    environment:
+      POSTGRES_DB: hubbly
+      POSTGRES_USER: hubbly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hubbly_password_123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - hubbly-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hubbly"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Hubbly API
+  api:
+    image: garloon/hubbly-api:latest
+    container_name: hubbly-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=hubbly;Username=hubbly;Password=${POSTGRES_PASSWORD:-hubbly_password_123}
+      - Jwt__Secret=${JWT_SECRET:-hubbly-super-secure-jwt-secret-key-2026-32chars}
+      - Jwt__Issuer=HubblySocialHub
+      - Jwt__Audience=HubblyClient
+      - Jwt__AccessTokenExpirationMinutes=15
+      - Jwt__RefreshTokenExpirationDays=7
+      - CORS__AllowedOrigins=${CORS_ALLOWED_ORIGINS:-http://localhost:5000,http://127.0.0.1:5000}
+    ports:
+      - "5000:5000"
+    # wwwroot is embedded in the Docker image, no volume mount needed
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - hubbly-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+
+networks:
+  hubbly-network:
+    driver: bridge

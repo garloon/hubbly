@@ -1,0 +1,44 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copy solution and restore dependencies
+COPY ["Hubbly.Backend.sln", "./"]
+COPY ["Hubbly.Api/Hubbly.Api.csproj", "Hubbly.Api/"]
+COPY ["Hubbly.Application/Hubbly.Application.csproj", "Hubbly.Application/"]
+COPY ["Hubbly.Domain/Hubbly.Domain.csproj", "Hubbly.Domain/"]
+COPY ["Hubbly.Infrastructure/Hubbly.Infrastructure.csproj", "Hubbly.Infrastructure/"]
+
+RUN dotnet restore "Hubbly.Api/Hubbly.Api.csproj"
+
+# Copy everything else and build
+COPY . .
+WORKDIR "/src/Hubbly.Api"
+RUN dotnet build "Hubbly.Api.csproj" -c Release -o /app/build
+
+# Publish stage
+FROM build AS publish
+RUN dotnet publish "Hubbly.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+WORKDIR /app
+
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Copy published files
+COPY --from=publish /app/publish .
+
+# Copy wwwroot with 3D models
+COPY --from=build /src/Hubbly.Api/wwwroot ./wwwroot
+
+# Expose port
+EXPOSE 5000
+
+# Set environment variables
+ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_ENVIRONMENT=Production
+
+# Run the application
+ENTRYPOINT ["dotnet", "Hubbly.Api.dll"]

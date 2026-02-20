@@ -5,9 +5,8 @@ on:
     branches: [ master ]
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -48,21 +47,46 @@ jobs:
           exit 1
         fi
     
-    - name: Create tar archive
-      run: |
-        cd publish
-        tar -czf ../publish.tar.gz .
-        cd ..
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
     
-    - name: Copy to server
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: ./Hubbly.Api/Dockerfile
+        push: true
+        tags: garloon/hubbly-api:latest
+        cache-from: type=registry,ref=garloon/hubbly-api:latest
+        cache-to: type=inline
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout deployment files
+      uses: actions/checkout@v3
+      with:
+        sparse-checkout: |
+          deployment/
+        sparse-checkout-cone-mode: true
+    
+    - name: Copy deployment files to server
       uses: appleboy/scp-action@v0.1.4
       with:
         host: ${{ secrets.SERVER_HOST }}
         username: ${{ secrets.SERVER_USER }}
         port: ${{ secrets.SERVER_PORT }}
         key: ${{ secrets.SERVER_SSH_KEY }}
-        source: "publish.tar.gz"
-        target: "/tmp"
+        source: "deployment/*"
+        target: "/opt/hubbly/"
+        strip_components: 1
     
     - name: Deploy on server
       uses: appleboy/ssh-action@v0.1.5
@@ -76,44 +100,34 @@ jobs:
           
           echo "🚀 Starting deployment..."
           
-          # 1. Распаковываем новую версию
-          echo "📦 Extracting files..."
-          rm -rf /opt/hubbly-publish-new
-          mkdir -p /opt/hubbly-publish-new
-          tar -xzf /tmp/publish.tar.gz -C /opt/hubbly-publish-new
-          rm /tmp/publish.tar.gz
+          # Переходим в директорию deployments
+          cd /opt/hubbly
           
-          # 2. ✅ МОДЕЛИ МЕНЯЮТСЯ АВТОМАТИЧЕСКИ!
-          #    Просто копируем новые модели из репозитория
-          echo "🆕 Using new avatar models from repository"
+          # Авторизуемся в Docker Hub (если еще не авторизованы)
+          echo "🔐 Logging in to Docker Hub..."
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
           
-          # 3. Проверяем наличие three_scene.html
-          if [ ! -f "/opt/hubbly-publish-new/wwwroot/three_scene.html" ]; then
-            echo "❌ ERROR: three_scene.html missing in new version!"
-            exit 1
-          fi
+          # Останавливаем старые контейнеры
+          echo "🛑 Stopping old containers..."
+          docker-compose down 2>/dev/null || true
           
-          # 4. Создаем бэкап старых моделей (на всякий случай)
-          echo "💾 Creating backup of old models..."
-          mkdir -p /opt/hubbly-backups/$(date +%Y%m%d_%H%M%S)
-          if [ -d "/opt/hubbly-publish/wwwroot/avatars" ]; then
-            cp -r /opt/hubbly-publish/wwwroot/avatars /opt/hubbly-backups/$(date +%Y%m%d_%H%M%S)/
-          fi
+          # Пуллим свежий образ
+          echo "📥 Pulling latest image..."
+          docker-compose pull
           
-          # 5. Меняем местами
-          echo "🔄 Switching versions..."
-          rm -rf /opt/hubbly-publish-old
-          mv /opt/hubbly-publish /opt/hubbly-publish-old 2>/dev/null || true
-          mv /opt/hubbly-publish-new /opt/hubbly-publish
+          # Запускаем контейнеры
+          echo "🚀 Starting containers..."
+          docker-compose up -d
           
-          # 6. Перезапускаем сервис
-          echo "🔄 Restarting service..."
-          systemctl restart hubbly
-          sleep 5
+          # Ждем запуска
+          sleep 10
           
-          # 7. Проверяем статус
-          echo "📊 Service status:"
-          systemctl status hubbly --no-pager
+          # Проверяем статус
+          echo "📊 Container status:"
+          docker-compose ps
+          
+          # Проверяем логи API
+          echo "📋 API logs (last 50 lines):"
+          docker logs hubbly-api --tail 50
           
           echo "✅ Deployment completed successfully!"
-          echo "📁 New models deployed to /opt/hubbly-publish/wwwroot/avatars/"

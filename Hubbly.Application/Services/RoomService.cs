@@ -197,6 +197,15 @@ public class RoomService : IRoomService
         return Task.CompletedTask;
     }
 
+    public Task<int> GetActiveRoomsCountAsync()
+    {
+        lock (_roomLock)
+        {
+            var activeCount = _rooms.Values.Count(r => r.IsActive);
+            return Task.FromResult(activeCount);
+        }
+    }
+
     #endregion
 
     #region Private methods

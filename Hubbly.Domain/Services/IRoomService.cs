@@ -9,4 +9,5 @@ public interface IRoomService
     Task RemoveUserFromRoomAsync(Guid userId);
     Task<ChatRoom?> GetRoomByUserIdAsync(Guid userId);
     Task CleanupEmptyRoomsAsync(TimeSpan emptyThreshold);
+    Task<int> GetActiveRoomsCountAsync();
 }
