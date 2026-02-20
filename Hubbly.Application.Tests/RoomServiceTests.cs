@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Hubbly.Application.Services;
 using Hubbly.Domain.Entities;
 using Microsoft.Extensions.Logging;

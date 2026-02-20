@@ -1,10 +1,13 @@
+using FluentAssertions;
 using Hubbly.Application.Services;
 using Hubbly.Domain.Common;
 using Hubbly.Domain.Dtos;
 using Hubbly.Domain.Entities;
 using Hubbly.Domain.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
 using Moq;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace Hubbly.Application.Tests;
 
@@ -55,7 +58,7 @@ public class AuthServiceTests
 
         _userRepositoryMock
             .Setup(r => r.AddAsync(It.IsAny<User>()))
-            .CallbackAsync<User>(u => user = u);
+            .Callback<User>(u => user = u);
 
         _jwtTokenServiceMock
             .Setup(s => s.GenerateAccessToken(It.IsAny<Guid>(), It.IsAny<string>()))
@@ -140,7 +143,7 @@ public class AuthServiceTests
         var refreshToken = "valid-refresh-token";
         var deviceId = "test-device";
         var user = new User(deviceId, "TestUser", null);
-        var storedToken = new RefreshToken(user.Id, refreshToken, deviceId);
+        var storedToken = new RefreshToken(user.Id, refreshToken, deviceId, 7);
 
         _refreshTokenRepositoryMock
             .Setup(r => r.GetByTokenAndDeviceAsync(refreshToken, deviceId))
@@ -197,7 +200,7 @@ public class AuthServiceTests
         // Arrange
         var refreshToken = "revoked-token";
         var deviceId = "test-device";
-        var storedToken = new RefreshToken(Guid.NewGuid(), refreshToken, deviceId);
+        var storedToken = new RefreshToken(Guid.NewGuid(), refreshToken, deviceId, 7);
         storedToken.Revoke();
 
         _refreshTokenRepositoryMock
@@ -247,8 +250,9 @@ public class AuthServiceTests
         // Use reflection to call private method
         var method = typeof(AuthService).GetMethod("GenerateGuestNicknameAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
-        // Act
-        var nickname = (string?)method?.Invoke(_authService, null);
+        // Act - async method returns Task<string>, need to await it
+        var task = (Task<string>)method!.Invoke(_authService, null)!;
+        var nickname = await task;
 
         // Assert
         nickname.Should().NotBeNullOrEmpty();

@@ -1,6 +1,8 @@
+using FluentAssertions;
 using Hubbly.Application.Services;
 using Hubbly.Domain.Dtos;
 using Hubbly.Domain.Entities;
+using Hubbly.Domain.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -113,7 +115,7 @@ public class UserServiceTests
         // Arrange
         var userId = Guid.NewGuid();
         var user = new User("device-id", "TestUser", "old-config");
-        var newAvatarConfig = "{\"new\":\"avatar\"}";
+        var newAvatarConfig = "{\"gender\":\"male\",\"baseModelId\":\"male_base\",\"pose\":\"standing\",\"components\":{}}";
 
         _userRepositoryMock
             .Setup(r => r.GetByIdAsync(userId))

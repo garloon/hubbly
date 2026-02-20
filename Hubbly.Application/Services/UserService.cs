@@ -104,33 +104,42 @@ public class UserService : IUserService
     }
 
     public async Task AddOwnedAssetAsync(Guid userId, string assetId)
-    {
-        using (_logger.BeginScope(new Dictionary<string, object>
-        {
-            ["UserId"] = userId,
-            ["AssetId"] = assetId
-        }))
-        {
-            _logger.LogInformation("AddOwnedAssetAsync started");
+   {
+       using (_logger.BeginScope(new Dictionary<string, object>
+       {
+           ["UserId"] = userId,
+           ["AssetId"] = assetId
+       }))
+       {
+           _logger.LogInformation("AddOwnedAssetAsync started");
 
-            try
-            {
-                ValidateAssetId(assetId);
+           try
+           {
+               ValidateAssetId(assetId);
 
-                var user = await GetUserAsync(userId);
+               var user = await GetUserAsync(userId);
 
-                user.AddOwnedAsset(assetId);
-                await _userRepository.UpdateAsync(user);
-
-                _logger.LogInformation("Added asset {AssetId} to user {UserId}", assetId, userId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to add asset {AssetId} to user {UserId}", assetId, userId);
-                throw;
-            }
-        }
-    }
+               var initialCount = user.OwnedAssetIds.Count;
+               user.AddOwnedAsset(assetId);
+               
+               // Only update database if the asset was actually added (count increased)
+               if (user.OwnedAssetIds.Count > initialCount)
+               {
+                   await _userRepository.UpdateAsync(user);
+                   _logger.LogInformation("Added asset {AssetId} to user {UserId}", assetId, userId);
+               }
+               else
+               {
+                   _logger.LogDebug("Asset {AssetId} already owned by user {UserId}, skipping update", assetId, userId);
+               }
+           }
+           catch (Exception ex)
+           {
+               _logger.LogError(ex, "Failed to add asset {AssetId} to user {UserId}", assetId, userId);
+               throw;
+           }
+       }
+   }
 
     #endregion
 
