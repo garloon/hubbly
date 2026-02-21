@@ -407,7 +407,11 @@ public class ChatHub : Hub
             return false;
         }
 
-        _nonceCache.Set(cacheKey, true, NonceLifetime);
+        _nonceCache.Set(cacheKey, true, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = NonceLifetime,
+            Size = 1
+        });
         return true;
     }
 
