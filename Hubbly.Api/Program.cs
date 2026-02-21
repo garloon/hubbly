@@ -276,26 +276,138 @@ public class Program
             {
                 if (corsOrigins != null && corsOrigins.Length > 0)
                 {
-                    policy.WithOrigins(corsOrigins)
-                        .AllowAnyMethod()
-                        .AllowAnyHeader()
-                        .AllowCredentials()
-                        .SetIsOriginAllowedToAllowWildcardSubdomains();
+                    // Use SetIsOriginAllowed for flexible origin matching (including IP ranges)
+                    policy.SetIsOriginAllowed(origin =>
+                    {
+                        // Always allow localhost and 127.0.0.1
+                        if (origin.StartsWith("http://localhost:5000") ||
+                            origin.StartsWith("http://127.0.0.1:5000") ||
+                            origin.StartsWith("http://10.0.2.2:5000") ||
+                            origin.StartsWith("http://192.168.0.103:5000"))
+                        {
+                            return true;
+                        }
+                        
+                        // Check against configured origins (supports wildcards)
+                        foreach (var allowedOrigin in corsOrigins)
+                        {
+                            if (IsOriginAllowed(origin, allowedOrigin))
+                            {
+                                return true;
+                            }
+                        }
+                        
+                        return false;
+                    })
+                    .AllowAnyMethod()
+                    .AllowAnyHeader()
+                    .AllowCredentials();
                 }
                 else
                 {
-                    // Fallback if configuration is missing
-                    policy.WithOrigins(
-                            "http://localhost:5000",
-                            "http://127.0.0.1:5000"
-                        )
+                    // Fallback if configuration is missing - permissive for development
+                    policy.SetIsOriginAllowed(_ => true)
                         .AllowAnyMethod()
                         .AllowAnyHeader()
-                        .AllowCredentials()
-                        .SetIsOriginAllowedToAllowWildcardSubdomains();
+                        .AllowCredentials();
                 }
             });
         });
+    }
+
+    /// <summary>
+    /// Checks if an origin matches an allowed origin pattern (supports wildcards)
+    /// </summary>
+    private static bool IsOriginAllowed(string origin, string allowedPattern)
+    {
+        try
+        {
+            var uri = new Uri(origin);
+            var pattern = allowedPattern.TrimEnd('/');
+            
+            // Exact match
+            if (string.Equals(origin, pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            
+            // Wildcard subdomain support (e.g., "http://192.168.1.*:5000")
+            if (pattern.Contains('*'))
+            {
+                var patternUri = new Uri(pattern.Replace("*", "0"));
+                if (uri.Host.StartsWith(patternUri.Host.Replace("*", ""), StringComparison.OrdinalIgnoreCase))
+                {
+                    if (uri.Port == patternUri.Port)
+                    {
+                        return true;
+                    }
+                }
+            }
+            
+            // IP range support (e.g., "http://10.0.0.0-10.255.255.255:5000")
+            if (pattern.Contains('-'))
+            {
+                return CheckIpRange(uri, pattern);
+            }
+        }
+        catch
+        {
+            // If parsing fails, don't allow
+        }
+        
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if an IP address falls within a specified range
+    /// </summary>
+    private static bool CheckIpRange(Uri uri, string pattern)
+    {
+        try
+        {
+            // Pattern: "http://10.0.0.0-10.255.255.255:5000"
+            var parts = pattern.Replace("http://", "").Split(':');
+            var ipRange = parts[0];
+            var port = int.Parse(parts[1]);
+            
+            if (uri.Port != port) return false;
+            
+            var rangeParts = ipRange.Split('-');
+            var startIp = ParseIp(rangeParts[0]);
+            var endIp = ParseIp(rangeParts[1]);
+            var clientIp = ParseIp(uri.Host);
+            
+            if (startIp == null || endIp == null || clientIp == null) return false;
+            
+            return CompareIp(clientIp, startIp) >= 0 && CompareIp(clientIp, endIp) <= 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static byte[]? ParseIp(string ip)
+    {
+        var parts = ip.Split('.');
+        if (parts.Length != 4) return null;
+        
+        var bytes = new byte[4];
+        for (int i = 0; i < 4; i++)
+        {
+            if (!byte.TryParse(parts[i], out bytes[i])) return null;
+        }
+        return bytes;
+    }
+
+    private static int CompareIp(byte[] ip1, byte[] ip2)
+    {
+        for (int i = 0; i < 4; i++)
+        {
+            int diff = ip1[i].CompareTo(ip2[i]);
+            if (diff != 0) return diff;
+        }
+        return 0;
     }
 
     private static void ConfigureSignalR(IServiceCollection services)
