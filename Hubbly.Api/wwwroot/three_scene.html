@@ -857,16 +857,49 @@
             camera = new THREE.OrthographicCamera();
 
             const canvas = document.getElementById('renderCanvas');
+            
+            // WebGL context attributes optimized for mobile devices
+            const contextAttributes = {
+                alpha: false,
+                antialias: false, // Disable antialiasing for better compatibility
+                depth: true,
+                stencil: false,
+                preserveDrawingBuffer: false,
+                powerPreference: "high-performance",
+                failIfMajorPerformanceCaveat: false
+            };
+            
             renderer = new THREE.WebGLRenderer({
                 canvas,
-                antialias: true,
-                powerPreference: "high-performance"
+                ...contextAttributes
+            });
+
+            // Check for WebGL extensions and log warnings
+            const gl = renderer.getContext();
+            const extensions = {
+                OES_texture_float: gl.getExtension('OES_texture_float'),
+                OES_texture_float_linear: gl.getExtension('OES_texture_float_linear'),
+                OES_texture_half_float: gl.getExtension('OES_texture_half_float'),
+                OES_texture_half_float_linear: gl.getExtension('OES_texture_half_float_linear')
+            };
+            
+            console.log('WebGL Extensions:', {
+                OES_texture_float: !!extensions.OES_texture_float,
+                OES_texture_float_linear: !!extensions.OES_texture_float_linear,
+                OES_texture_half_float: !!extensions.OES_texture_half_float,
+                OES_texture_half_float_linear: !!extensions.OES_texture_half_float_linear
             });
 
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            // Limit pixel ratio to 1.5 for better performance on mobile
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+            
+            // Configure shadow maps for mobile compatibility
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            // Set reasonable shadow map size for mobile
+            renderer.shadowMap.setSize(512, 512);
 
             setupLighting();
             avatarManager = new AvatarManager();
