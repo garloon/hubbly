@@ -898,8 +898,9 @@
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             
-            // Set reasonable shadow map size for mobile
-            renderer.shadowMap.setSize(512, 512);
+            // Set reasonable shadow map size for mobile (Three.js r121 uses mapSize)
+            renderer.shadowMap.mapSize.width = 512;
+            renderer.shadowMap.mapSize.height = 512;
 
             setupLighting();
             avatarManager = new AvatarManager();
