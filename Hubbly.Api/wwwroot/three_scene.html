@@ -520,11 +520,11 @@
 
                 scene.add(avatar.group);
 
-                // Load model with delay
-                setTimeout(() => avatar.loadModel(), 300 + (this.avatars.size * 100));
+                // Load model immediately (parallel loading)
+                avatar.loadModel();
 
                 if (window.__updateClickableObjects) {
-                    setTimeout(() => window.__updateClickableObjects(), 500);
+                    window.__updateClickableObjects();
                 }
 
                 if (cameraController) {
@@ -832,6 +832,37 @@
                 }
             }
 
+            centerOnAvatar(userId, duration = 500) {
+                if (!avatarManager) return false;
+                
+                const avatar = avatarManager.getAvatar(userId);
+                if (!avatar) return false;
+                
+                const targetX = avatar.xPosition;
+                const startX = this.camera.position.x;
+                const startTime = Date.now();
+                
+                // Animate camera to target position
+                const animate = () => {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    // Ease out cubic: 1 - (1-p)^3
+                    const eased = 1 - Math.pow(1 - progress, 3);
+                    
+                    this.targetX = startX + (targetX - startX) * eased;
+                    this.updateCameraPosition();
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        this.targetX = targetX; // Ensure exact final position
+                    }
+                };
+                
+                animate();
+                return true;
+            }
+
             update() {
                 if (!this.isDragging) {
                     this.updateCameraPosition();
@@ -1061,6 +1092,102 @@
                 isLoaded: a.isLoaded
             })) || [],
 
+            getAvatarList: () => {
+                if (!avatarManager) return [];
+                return avatarManager.getAvatars()
+                    .map(a => ({
+                        userId: a.userId,
+                        nickname: a.nickname,
+                        gender: a.gender,
+                        slotIndex: a.slotIndex,
+                        xPosition: a.xPosition,
+                        isLoaded: a.isLoaded
+                    }))
+                    .sort((a, b) => a.slotIndex - b.slotIndex);
+            },
+
+            // Determines which avatar is closest to the center of the camera view
+            getAvatarAtCenter: function () {
+                if (!avatarManager || !cameraController) return null;
+                
+                const avatars = avatarManager.getAvatars();
+                if (avatars.length === 0) return null;
+                
+                // Find avatar with xPosition closest to camera.position.x
+                let nearestAvatar = null;
+                let minDistance = Infinity;
+                
+                for (const avatar of avatars) {
+                    const distance = Math.abs(avatar.xPosition - camera.position.x);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        nearestAvatar = avatar;
+                    }
+                }
+                
+                if (nearestAvatar) {
+                    return {
+                        userId: nearestAvatar.userId,
+                        nickname: nearestAvatar.nickname,
+                        gender: nearestAvatar.gender,
+                        slotIndex: nearestAvatar.slotIndex,
+                        xPosition: nearestAvatar.xPosition,
+                        isLoaded: nearestAvatar.isLoaded
+                    };
+                }
+                
+                return null;
+            },
+
+            // Navigate to next/previous avatar based on current camera position
+            navigateToAdjacentAvatar: function (direction) {
+                if (!avatarManager || !cameraController) return null;
+                
+                const avatars = avatarManager.getAvatars();
+                if (avatars.length <= 1) return null;
+                
+                // Get current center avatar
+                const currentCenter = this.getAvatarAtCenter();
+                if (!currentCenter) return null;
+                
+                // Find avatars in the specified direction
+                const sortedAvatars = [...avatars].sort((a, b) => a.slotIndex - b.slotIndex);
+                const currentIndex = sortedAvatars.findIndex(a => a.userId === currentCenter.userId);
+                
+                if (currentIndex === -1) return null;
+                
+                let targetIndex;
+                if (direction === 'next') {
+                    // Move to right (higher slot index)
+                    targetIndex = currentIndex + 1;
+                    if (targetIndex >= sortedAvatars.length) targetIndex = sortedAvatars.length - 1;
+                } else {
+                    // Move to left (lower slot index)
+                    targetIndex = currentIndex - 1;
+                    if (targetIndex < 0) targetIndex = 0;
+                }
+                
+                const targetAvatar = sortedAvatars[targetIndex];
+                if (targetAvatar && targetAvatar.userId !== currentCenter.userId) {
+                    this.centerOnAvatar(targetAvatar.userId);
+                    return {
+                        userId: targetAvatar.userId,
+                        nickname: targetAvatar.nickname,
+                        gender: targetAvatar.gender,
+                        slotIndex: targetAvatar.slotIndex,
+                        xPosition: targetAvatar.xPosition,
+                        isLoaded: targetAvatar.isLoaded
+                    };
+                }
+                
+                return null;
+            },
+
+            centerOnAvatar: function (userId) {
+                if (!cameraController) return false;
+                return cameraController.centerOnAvatar(userId);
+            },
+
             playAnimation: (userId, animationName = 'idle', loop = true) => {
                 let animName = animationName;
                 if (animationName === 'clap' || animationName === 'clapping') {
@@ -1069,11 +1196,47 @@
                 return avatarManager?.playAvatarAnimation(userId, animName, loop) || false;
             },
 
+            // Hold navigation with 200ms interval
+            _holdTimer: null,
+            _holdDirection: null,
+            _isHolding: false,
+            
+            startHoldNavigation: function (direction) {
+                if (this._isHolding) return;
+                
+                this._isHolding = true;
+                this._holdDirection = direction;
+                
+                // Execute first navigation immediately
+                const result = this.navigateToAdjacentAvatar(direction);
+                
+                // Then set up repeat every 200ms
+                this._holdTimer = setInterval(() => {
+                    const res = this.navigateToAdjacentAvatar(direction);
+                    if (!res) {
+                        // No more avatars in that direction, stop holding
+                        this.stopHoldNavigation();
+                    }
+                }, 200);
+                
+                return result;
+            },
+            
+            stopHoldNavigation: function () {
+                if (this._holdTimer) {
+                    clearInterval(this._holdTimer);
+                    this._holdTimer = null;
+                }
+                this._isHolding = false;
+                this._holdDirection = null;
+            },
+
             cleanup: function () {
                 if (updateInterval) {
                     clearInterval(updateInterval);
                     updateInterval = null;
                 }
+                this.stopHoldNavigation();
                 avatarManager?.clearAll();
             }
         };
