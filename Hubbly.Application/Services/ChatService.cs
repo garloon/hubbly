@@ -115,23 +115,23 @@ public class ChatService : IChatService
         }
     }
 
-    private async Task<bool> ValidateMessageContentAsync(string content)
+    private Task<bool> ValidateMessageContentAsync(string content)
     {
         // Length check
         if (string.IsNullOrWhiteSpace(content) || content.Length > 500)
         {
             _logger.LogDebug("Message validation failed: length {Length}", content?.Length ?? 0);
-            return false;
+            return Task.FromResult(false);
         }
         
         // Spam check
         if (IsSpam(content))
         {
             _logger.LogDebug("Message validation failed: spam detected");
-            return false;
+            return Task.FromResult(false);
         }
 
-        return true;
+        return Task.FromResult(true);
     }
 
     private bool IsSpam(string content)

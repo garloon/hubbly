@@ -117,22 +117,18 @@ public class AuthServiceTests
     [Fact]
     public async Task AuthenticateGuestAsync_WithEmptyDeviceId_ThrowsArgumentException()
     {
-        // Act
-        var act = async () => await _authService.AuthenticateGuestAsync(string.Empty);
-
-        // Assert
-        act.Should().ThrowAsync<ArgumentException>()
+        // Act & Assert
+        Func<Task> act = () => _authService.AuthenticateGuestAsync(string.Empty);
+        await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("DeviceId is required");
     }
 
     [Fact]
     public async Task AuthenticateGuestAsync_WithNullDeviceId_ThrowsArgumentException()
     {
-        // Act
-        var act = async () => await _authService.AuthenticateGuestAsync(null!);
-
-        // Assert
-        act.Should().ThrowAsync<ArgumentException>()
+        // Act & Assert
+        Func<Task> act = () => _authService.AuthenticateGuestAsync(null!);
+        await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("DeviceId is required");
     }
 
@@ -186,11 +182,9 @@ public class AuthServiceTests
             .Setup(r => r.GetByTokenAndDeviceAsync(refreshToken, deviceId))
             .ReturnsAsync((RefreshToken?)null);
 
-        // Act
-        var act = async () => await _authService.RefreshTokenAsync(refreshToken, deviceId);
-
-        // Assert
-        act.Should().ThrowAsync<SecurityTokenException>()
+        // Act & Assert
+        Func<Task> act = () => _authService.RefreshTokenAsync(refreshToken, deviceId);
+        await act.Should().ThrowAsync<SecurityTokenException>()
             .WithMessage("Refresh token not found");
     }
 
@@ -207,33 +201,27 @@ public class AuthServiceTests
             .Setup(r => r.GetByTokenAndDeviceAsync(refreshToken, deviceId))
             .ReturnsAsync(storedToken);
 
-        // Act
-        var act = async () => await _authService.RefreshTokenAsync(refreshToken, deviceId);
-
-        // Assert
-        act.Should().ThrowAsync<SecurityTokenException>()
+        // Act & Assert
+        Func<Task> act = () => _authService.RefreshTokenAsync(refreshToken, deviceId);
+        await act.Should().ThrowAsync<SecurityTokenException>()
             .WithMessage("Refresh token expired or revoked");
     }
 
     [Fact]
     public async Task RefreshTokenAsync_WithEmptyRefreshToken_ThrowsArgumentException()
     {
-        // Act
-        var act = async () => await _authService.RefreshTokenAsync(string.Empty, "deviceId");
-
-        // Assert
-        act.Should().ThrowAsync<ArgumentException>()
+        // Act & Assert
+        Func<Task> act = () => _authService.RefreshTokenAsync(string.Empty, "deviceId");
+        await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("Refresh token is required");
     }
 
     [Fact]
     public async Task RefreshTokenAsync_WithEmptyDeviceId_ThrowsArgumentException()
     {
-        // Act
-        var act = async () => await _authService.RefreshTokenAsync("token", string.Empty);
-
-        // Assert
-        act.Should().ThrowAsync<ArgumentException>()
+        // Act & Assert
+        Func<Task> act = () => _authService.RefreshTokenAsync("token", string.Empty);
+        await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("DeviceId is required");
     }
 
