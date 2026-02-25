@@ -9,6 +9,7 @@ public class AppDbContext : DbContext
 {
     public DbSet<User> Users { get; set; } = null!;
     public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
+    public DbSet<ChatRoom> ChatRooms { get; set; } = null!;
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -16,6 +17,7 @@ public class AppDbContext : DbContext
     {
         modelBuilder.ApplyConfiguration(new UserConfiguration());
         modelBuilder.ApplyConfiguration(new RefreshTokenConfiguration());
+        modelBuilder.ApplyConfiguration(new ChatRoomConfiguration());
     }
 }
 
@@ -62,6 +64,9 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.HasIndex(u => u.CreatedAt)
             .HasDatabaseName("IX_Users_CreatedAt");
+
+        builder.HasIndex(u => u.LastRoomId)
+            .HasDatabaseName("IX_Users_LastRoomId");
 
         // Relationships
         builder.HasMany(u => u.RefreshTokens)

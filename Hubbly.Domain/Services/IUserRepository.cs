@@ -10,4 +10,5 @@ public interface IUserRepository
     Task<IEnumerable<User>> GetByIdsAsync(IEnumerable<Guid> userIds);
     Task AddAsync(User user);
     Task UpdateAsync(User user);
+    Task UpdateLastRoomIdAsync(Guid userId, Guid? roomId);
 }

@@ -1,6 +1,8 @@
 using FluentAssertions;
+using Hubbly.Application.Config;
 using Hubbly.Application.Services;
 using Hubbly.Domain.Entities;
+using Hubbly.Domain.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -10,16 +12,20 @@ namespace Hubbly.Application.Tests;
 public class RoomServiceTests
 {
     private readonly Mock<ILogger<RoomService>> _loggerMock;
+    private readonly Mock<IRoomRepository> _roomRepositoryMock;
+    private readonly Mock<IUserRepository> _userRepositoryMock;
     private readonly RoomServiceOptions _options;
     private readonly RoomService _roomService;
 
     public RoomServiceTests()
     {
         _loggerMock = new Mock<ILogger<RoomService>>();
+        _roomRepositoryMock = new Mock<IRoomRepository>();
+        _userRepositoryMock = new Mock<IUserRepository>();
         _options = new RoomServiceOptions { DefaultMaxUsers = 50 };
         var optionsWrapper = Options.Create(_options);
 
-        _roomService = new RoomService(_loggerMock.Object, optionsWrapper);
+        _roomService = new RoomService(_roomRepositoryMock.Object, _userRepositoryMock.Object, _loggerMock.Object, optionsWrapper);
     }
 
     [Fact]

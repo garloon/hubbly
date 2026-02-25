@@ -1,50 +1,62 @@
-﻿namespace Hubbly.Domain.Entities;
+﻿using System.Text.Json.Serialization;
+
+namespace Hubbly.Domain.Entities;
+
+public enum RoomType
+{
+    System = 0,
+    Public = 1,
+    Private = 2
+}
 
 public class ChatRoom
 {
-    public Guid Id { get; private set; }
-    public string Name { get; private set; } = null!;
-    public int CurrentUsers { get; private set; }
-    public int MaxUsers { get; private set; }
-    public DateTimeOffset CreatedAt { get; private set; }
-    public DateTimeOffset? LastActiveAt { get; private set; }
-    public bool IsMarkedForDeletion { get; private set; }
+    public Guid Id { get; set; }
+    public string Name { get; set; } = null!;
+    public string? Description { get; set; }
+    public RoomType Type { get; set; }
+    public int MaxUsers { get; set; }
+    public Guid? CreatedBy { get; set; } // null для системных комнат
+    public string? PasswordHash { get; set; } // только для Private комнат
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset LastActiveAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
 
+    // Конструктор для EF Core
     private ChatRoom() { }
 
-    public ChatRoom(string name, int maxUsers = 50)
+    public ChatRoom(string name, RoomType type, int maxUsers = 50, Guid? createdBy = null, string? description = null)
     {
         Id = Guid.NewGuid();
-        Name = name;
-        CurrentUsers = 0;
-        MaxUsers = maxUsers;
+        Name = name ?? throw new ArgumentNullException(nameof(name));
+        Type = type;
+        MaxUsers = maxUsers > 0 ? maxUsers : throw new ArgumentException("MaxUsers must be positive", nameof(maxUsers));
+        CreatedBy = createdBy;
+        Description = description;
         CreatedAt = DateTimeOffset.UtcNow;
         LastActiveAt = DateTimeOffset.UtcNow;
-        IsMarkedForDeletion = false;
+        UpdatedAt = DateTimeOffset.UtcNow;
+        IsActive = true;
     }
 
-    public void UserJoined()
+    public void UpdateLastActive()
     {
-        // PROTECTION: cannot exceed room limit
-        if (CurrentUsers >= MaxUsers)
-        {
-            throw new InvalidOperationException($"Room is full (max {MaxUsers})");
-        }
-
-        CurrentUsers++;
         LastActiveAt = DateTimeOffset.UtcNow;
-        IsMarkedForDeletion = false;
+        UpdatedAt = DateTimeOffset.UtcNow;
     }
 
-    public void UserLeft()
+    public void MarkAsInactive()
     {
-        if (CurrentUsers > 0)
-            CurrentUsers--;
-
-        if (CurrentUsers == 0)
-            LastActiveAt = DateTimeOffset.UtcNow;
+        IsActive = false;
+        UpdatedAt = DateTimeOffset.UtcNow;
     }
 
-    public bool IsActive => CurrentUsers < MaxUsers;
-    public bool IsEmpty => CurrentUsers == 0;
+    public void UpdateDetails(string? name = null, string? description = null, int? maxUsers = null)
+    {
+        if (name != null) Name = name;
+        if (description != null) Description = description;
+        if (maxUsers.HasValue && maxUsers.Value > 0) MaxUsers = maxUsers.Value;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 }

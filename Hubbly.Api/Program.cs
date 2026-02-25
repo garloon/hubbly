@@ -8,20 +8,24 @@ using Hubbly.Application.Services;
 using Hubbly.Domain.Events;
 using Hubbly.Domain.Common;
 using Hubbly.Domain.Services;
+using Hubbly.Application.Config;
 using Hubbly.Infrastructure.Data;
 using Hubbly.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR.StackExchangeRedis;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using StackExchange.Redis;
 using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
@@ -41,39 +45,43 @@ public class Program
 
         var app = builder.Build();
 
-        await ApplyMigrations(app);
-
-        // Configure middleware
-        ConfigureMiddleware(app, environment);
-
-        await app.RunAsync();
-    }
-
-    private static async Task ApplyMigrations(WebApplication app)
-    {
+        // Apply database migrations automatically
         using var scope = app.Services.CreateScope();
         var services = scope.ServiceProvider;
 
         try
         {
             var dbContext = services.GetRequiredService<AppDbContext>();
-            
             var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
-            var pendingList = pendingMigrations.ToList();
 
-            if (pendingList.Any())
+            if (pendingMigrations.Any())
+            {
+                var logger = services.GetRequiredService<ILogger<Program>>();
+                logger.LogInformation("Applying database migrations...");
                 await dbContext.Database.MigrateAsync();
+                logger.LogInformation("Database migrations applied successfully");
+            }
         }
         catch (Exception ex)
         {
             var logger = services.GetRequiredService<ILogger<Program>>();
             logger.LogError(ex, "❌ An error occurred while migrating the database");
-            
-            if (app.Environment.IsProduction())
-            {
-                throw; // Application will not start
-            }
+            throw; // Re-throw to prevent app start with invalid DB
         }
+
+        // Seed initial system room
+        using (var seedScope = app.Services.CreateScope())
+        {
+            var roomService = seedScope.ServiceProvider.GetRequiredService<IRoomService>();
+            var logger = seedScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            await roomService.GetOrCreateRoomForGuestAsync();
+            logger.LogInformation("Initial system room created or verified");
+        }
+
+        // Configure middleware
+        ConfigureMiddleware(app, environment);
+
+        await app.RunAsync();
     }
 
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration, IHostEnvironment environment)
@@ -83,7 +91,7 @@ public class Program
 
         // FluentValidation - automatic validation
         services.AddFluentValidationAutoValidation();
-        
+
         // FluentValidation - manual registration
         services.AddSingleton<IValidator<GuestAuthRequest>, GuestAuthRequestValidator>();
         services.AddSingleton<IValidator<RefreshTokenRequest>, RefreshTokenRequestValidator>();
@@ -150,7 +158,24 @@ public class Program
         ConfigureCors(services, configuration);
 
         // SignalR
-        ConfigureSignalR(services);
+        ConfigureSignalR(services, configuration);
+
+        // Redis Configuration
+        var redisConfig = new ConfigurationOptions
+        {
+            AbortOnConnectFail = false,
+            ConnectRetry = 3,
+            ConnectTimeout = 5000,
+            SyncTimeout = 5000
+        };
+        var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+        redisConfig.EndPoints.Add(redisConnectionString);
+
+        // Redis Connection Multiplexer
+        services.AddSingleton<global::StackExchange.Redis.IConnectionMultiplexer>(sp =>
+        {
+            return global::StackExchange.Redis.ConnectionMultiplexer.Connect(redisConfig);
+        });
 
         // Rate Limiting
         ConfigureRateLimiting(services);
@@ -190,19 +215,40 @@ public class Program
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
+        // Room Repository (Composite with Redis + DB fallback)
+        services.AddSingleton<IRoomRepository>(sp =>
+        {
+            var redis = sp.GetRequiredService<global::StackExchange.Redis.IConnectionMultiplexer>();
+            var dbContext = sp.GetRequiredService<AppDbContext>();
+            var logger = sp.GetRequiredService<ILogger<RedisRoomRepository>>();
+            var dbLogger = sp.GetRequiredService<ILogger<RoomDbRepository>>();
+            var compositeLogger = sp.GetRequiredService<ILogger<CompositeRoomRepository>>();
+
+            var redisRepo = new RedisRoomRepository(redis, logger);
+            var dbRepo = new RoomDbRepository(dbContext, dbLogger);
+            return new CompositeRoomRepository(redisRepo, dbRepo, compositeLogger);
+        });
+
         // Services
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IAvatarValidator, AvatarValidator>();
-        
+
         // Domain Events
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
         services.AddScoped<LoggingEventHandler>();
 
         // Singletons
-        services.AddSingleton<IRoomService, RoomService>();
+        services.AddSingleton<IRoomService>(sp =>
+        {
+            var roomRepository = sp.GetRequiredService<IRoomRepository>();
+            var userRepository = sp.GetRequiredService<IUserRepository>();
+            var logger = sp.GetRequiredService<ILogger<RoomService>>();
+            var options = sp.GetRequiredService<IOptions<RoomServiceOptions>>();
+            return new RoomService(roomRepository, userRepository, logger, options);
+        });
 
         // Hosted Services
         services.AddHostedService<RoomCleanupService>();
@@ -269,7 +315,7 @@ public class Program
     private static void ConfigureCors(IServiceCollection services, IConfiguration configuration)
     {
         var corsOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
-        
+
         services.AddCors(options =>
         {
             options.AddPolicy("AllowMobileApp", policy =>
@@ -287,7 +333,7 @@ public class Program
                         {
                             return true;
                         }
-                        
+
                         // Check against configured origins (supports wildcards)
                         foreach (var allowedOrigin in corsOrigins)
                         {
@@ -296,7 +342,7 @@ public class Program
                                 return true;
                             }
                         }
-                        
+
                         return false;
                     })
                     .AllowAnyMethod()
@@ -324,13 +370,13 @@ public class Program
         {
             var uri = new Uri(origin);
             var pattern = allowedPattern.TrimEnd('/');
-            
+
             // Exact match
             if (string.Equals(origin, pattern, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
-            
+
             // Wildcard subdomain support (e.g., "http://192.168.1.*:5000")
             if (pattern.Contains('*'))
             {
@@ -343,7 +389,7 @@ public class Program
                     }
                 }
             }
-            
+
             // IP range support (e.g., "http://10.0.0.0-10.255.255.255:5000")
             if (pattern.Contains('-'))
             {
@@ -354,7 +400,7 @@ public class Program
         {
             // If parsing fails, don't allow
         }
-        
+
         return false;
     }
 
@@ -369,16 +415,16 @@ public class Program
             var parts = pattern.Replace("http://", "").Split(':');
             var ipRange = parts[0];
             var port = int.Parse(parts[1]);
-            
+
             if (uri.Port != port) return false;
-            
+
             var rangeParts = ipRange.Split('-');
             var startIp = ParseIp(rangeParts[0]);
             var endIp = ParseIp(rangeParts[1]);
             var clientIp = ParseIp(uri.Host);
-            
+
             if (startIp == null || endIp == null || clientIp == null) return false;
-            
+
             return CompareIp(clientIp, startIp) >= 0 && CompareIp(clientIp, endIp) <= 0;
         }
         catch
@@ -391,7 +437,7 @@ public class Program
     {
         var parts = ip.Split('.');
         if (parts.Length != 4) return null;
-        
+
         var bytes = new byte[4];
         for (int i = 0; i < 4; i++)
         {
@@ -410,8 +456,17 @@ public class Program
         return 0;
     }
 
-    private static void ConfigureSignalR(IServiceCollection services)
+    private static void ConfigureSignalR(IServiceCollection services, IConfiguration configuration)
     {
+        var redisConfig = new ConfigurationOptions
+        {
+            AbortOnConnectFail = false,
+            ConnectRetry = 3,
+            ConnectTimeout = 5000,
+            SyncTimeout = 5000
+        };
+        var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+
         services.AddSignalR(hubOptions =>
         {
             hubOptions.MaximumParallelInvocationsPerClient = 10;
@@ -419,6 +474,12 @@ public class Program
             hubOptions.EnableDetailedErrors = false;
             hubOptions.ClientTimeoutInterval = TimeSpan.FromSeconds(30);
             hubOptions.KeepAliveInterval = TimeSpan.FromSeconds(15);
+        })
+        .AddStackExchangeRedis(redisConnectionString, options =>
+        {
+            // Configuration options are set via the connection string and Configuration property
+            options.Configuration.AbortOnConnectFail = false;
+            options.Configuration.ChannelPrefix = RedisChannel.Literal("HubblySignalR");
         });
     }
 

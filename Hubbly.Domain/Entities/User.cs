@@ -16,6 +16,9 @@ public class User : BaseEntity
     // Navigation properties
     public ICollection<RefreshToken> RefreshTokens { get; private set; } = new List<RefreshToken>();
 
+    // Last room the user was in (for returning users)
+    public Guid? LastRoomId { get; set; }
+
     private User() { } // For EF Core
 
     public User(string deviceId, string nickname, string? avatarConfigJson = null)

@@ -9,7 +9,7 @@ public class RoomCleanupService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RoomCleanupService> _logger;
-    private readonly TimeSpan _emptyRoomTTL = TimeSpan.FromDays(10);
+    private readonly TimeSpan _cleanupInterval = TimeSpan.FromMinutes(5);
 
     public RoomCleanupService(IServiceProvider serviceProvider, ILogger<RoomCleanupService> logger)
     {
@@ -27,11 +27,10 @@ public class RoomCleanupService : BackgroundService
             {
                 using var scope = _serviceProvider.CreateScope();
                 var roomService = scope.ServiceProvider.GetRequiredService<IRoomService>();
-
-                // Clean up every hour, but delete after 1 day (was 10 days)
+                
                 await roomService.CleanupEmptyRoomsAsync(TimeSpan.FromDays(1));
 
-                await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+                await Task.Delay(_cleanupInterval, stoppingToken);
             }
             catch (Exception ex)
             {

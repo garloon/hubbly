@@ -15,6 +15,7 @@ public class ChatHub : Hub
     private readonly IUserService _userService;
     private readonly IUserRepository _userRepository;
     private readonly IRoomService _roomService;
+    private readonly IRoomRepository _roomRepository;
     private readonly ILogger<ChatHub> _logger;
     private readonly IMemoryCache _nonceCache;
 
@@ -26,6 +27,7 @@ public class ChatHub : Hub
         IUserService userService,
         IUserRepository userRepository,
         IRoomService roomService,
+        IRoomRepository roomRepository,
         ILogger<ChatHub> logger,
         IMemoryCache nonceCache)
     {
@@ -33,6 +35,7 @@ public class ChatHub : Hub
         _userService = userService ?? throw new ArgumentNullException(nameof(userService));
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _roomService = roomService ?? throw new ArgumentNullException(nameof(roomService));
+        _roomRepository = roomRepository ?? throw new ArgumentNullException(nameof(roomRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _nonceCache = nonceCache ?? throw new ArgumentNullException(nameof(nonceCache));
     }
@@ -67,9 +70,38 @@ public class ChatHub : Hub
                     return;
                 }
 
-                // Get or create room
-                var room = await _roomService.GetOrCreateRoomForGuestAsync();
-                await _roomService.AssignGuestToRoomAsync(userId, room.Id);
+                // Determine room assignment
+                ChatRoom room;
+                
+                // For authenticated users with a valid last room, try to return to it
+                if (user.LastRoomId.HasValue)
+                {
+                    var lastRoom = await _roomRepository.GetByIdAsync(user.LastRoomId.Value);
+                    var lastRoomUserCount = lastRoom != null ? await _roomRepository.GetUserCountAsync(lastRoom.Id) : 0;
+                    if (lastRoom != null && lastRoom.IsActive && lastRoomUserCount < lastRoom.MaxUsers)
+                    {
+                        // Rejoin the last room
+                        await _roomService.JoinRoomAsync(lastRoom.Id, userId);
+                        room = lastRoom;
+                        _logger.LogDebug("User returned to last room: {RoomName}", room.Name);
+                    }
+                    else
+                    {
+                        // Last room invalid, get system room and join it
+                        room = await _roomService.GetOrCreateRoomForGuestAsync();
+                        await _roomService.JoinRoomAsync(room.Id, userId);
+                        _logger.LogDebug("Assigned user to new system room: {RoomName}", room.Name);
+                    }
+                }
+                else
+                {
+                    // No last room (first time), get system room and join it
+                    room = await _roomService.GetOrCreateRoomForGuestAsync();
+                    await _roomService.JoinRoomAsync(room.Id, userId);
+                    _logger.LogDebug("Assigned user to system room: {RoomName}", room.Name);
+                }
+
+                // Update LastRoomId for the user (already updated in JoinRoomAsync/AssignGuestToRoomAsync)
 
                 // Save connected user information
                 var connectedUser = new ConnectedUser
@@ -89,14 +121,15 @@ public class ChatHub : Hub
                 // Send room information
                 await SendRoomAssignmentAsync(room);
 
-                // Send list of existing users
+                // Send list of existing users (from Redis/DB, not just this instance)
                 await SendExistingUsersAsync(room.Id, userId);
 
                 // Notify others about new user
                 await NotifyUserJoinedAsync(userId, user.Nickname, user.AvatarConfigJson, room.Id);
 
+                var userCount = await _roomRepository.GetUserCountAsync(room.Id);
                 _logger.LogInformation("User {Nickname} (ID: {UserId}) connected to room {RoomName} ({Users}/{Max})",
-                    user.Nickname, userId, room.Name, room.CurrentUsers, room.MaxUsers);
+                    user.Nickname, userId, room.Name, userCount, room.MaxUsers);
             }
             catch (Exception ex)
             {
@@ -315,11 +348,12 @@ public class ChatHub : Hub
 
     private async Task SendRoomAssignmentAsync(ChatRoom room)
     {
+        var userCount = await _roomRepository.GetUserCountAsync(room.Id);
         await Clients.Caller.SendAsync("AssignedToRoom", new RoomAssignmentData
         {
             RoomId = room.Id,
             RoomName = room.Name,
-            UsersInRoom = room.CurrentUsers,
+            UsersInRoom = userCount,
             MaxUsers = room.MaxUsers
         });
 
@@ -328,19 +362,25 @@ public class ChatHub : Hub
 
     private async Task SendExistingUsersAsync(Guid roomId, Guid currentUserId)
     {
-        var existingUsers = _connectedUsers.Values
-            .Where(u => u.RoomId == roomId && u.UserId != currentUserId)
-            .Select(u => new UserJoinedData
+        // Get all online user IDs in the room from Redis/DB
+        var onlineUserIds = await _roomRepository.GetOnlineUserIdsInRoomAsync(roomId);
+        
+        // Exclude current user
+        var otherUserIds = onlineUserIds.Where(uid => uid != currentUserId).ToList();
+        
+        if (otherUserIds.Any())
+        {
+            // Get user profiles from repository
+            var users = await _userRepository.GetByIdsAsync(otherUserIds);
+            
+            var existingUsers = users.Select(u => new UserJoinedData
             {
-                UserId = u.UserId.ToString(),
+                UserId = u.Id.ToString(),
                 Nickname = u.Nickname,
                 AvatarConfigJson = u.AvatarConfigJson,
-                JoinedAt = u.ConnectedAt
-            })
-            .ToList();
+                JoinedAt = DateTimeOffset.UtcNow // We don't store connection time in DB, use current time
+            }).ToList();
 
-        if (existingUsers.Any())
-        {
             await Clients.Caller.SendAsync("ReceiveInitialPresence", existingUsers);
             _logger.LogDebug("Sent {Count} existing users to new connection", existingUsers.Count);
         }

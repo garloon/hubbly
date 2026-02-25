@@ -1,246 +1,310 @@
 ﻿using Hubbly.Domain.Entities;
+using Hubbly.Domain.Dtos;
 using Hubbly.Domain.Services;
+using Hubbly.Application.Config;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System.Collections.Concurrent;
-using System.Threading;
 
 namespace Hubbly.Application.Services;
 
 public class RoomService : IRoomService
 {
+    private readonly IRoomRepository _roomRepository;
+    private readonly IUserRepository _userRepository;
     private readonly ILogger<RoomService> _logger;
     private readonly RoomServiceOptions _options;
-    private readonly object _roomLock = new object();
 
-    private static readonly ConcurrentDictionary<Guid, ChatRoom> _rooms = new();
-    private static readonly ConcurrentDictionary<Guid, Guid> _userRoomMap = new();
-
-    public RoomService(ILogger<RoomService> logger, IOptions<RoomServiceOptions> options)
+    public RoomService(
+        IRoomRepository roomRepository,
+        IUserRepository userRepository,
+        ILogger<RoomService> logger,
+        IOptions<RoomServiceOptions> options)
     {
+        _roomRepository = roomRepository ?? throw new ArgumentNullException(nameof(roomRepository));
+        _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-
-        InitializeFirstRoom();
     }
-
-    #region Initialization
-
-    private void InitializeFirstRoom()
-    {
-        if (!_rooms.IsEmpty) return;
-
-        lock (_roomLock)
-        {
-            if (!_rooms.IsEmpty) return;
-
-            var firstRoom = new ChatRoom("General room #1", _options.DefaultMaxUsers);
-            if (_rooms.TryAdd(firstRoom.Id, firstRoom))
-            {
-                _logger.LogInformation("Initialized first room: {RoomName}", firstRoom.Name);
-            }
-        }
-    }
-
-    #endregion
 
     #region Public methods
 
-    public Task<ChatRoom> GetOrCreateRoomForGuestAsync()
+    public async Task<ChatRoom> GetOrCreateRoomForGuestAsync()
     {
-        lock (_roomLock)
+        // Ищем оптимальную системную комнату
+        var room = await _roomRepository.GetOptimalRoomAsync(RoomType.System, _options.DefaultMaxUsers);
+
+        if (room != null)
         {
-            // 1. Search for active room with space
-            var bestRoom = _rooms.Values
-                .Where(r => r.IsActive && !r.IsMarkedForDeletion && r.CurrentUsers < r.MaxUsers)
-                .OrderByDescending(r => r.CurrentUsers)
-                .FirstOrDefault();
+            _logger.LogDebug("Found existing system room: {RoomName} ({RoomId})", room.Name, room.Id);
+            return room;
+        }
 
-            if (bestRoom != null)
+        // Если нет системных комнат, создаем первую
+        _logger.LogInformation("No system rooms found, creating first system room");
+        var newRoom = new ChatRoom(
+            "General room #1",
+            RoomType.System,
+            _options.DefaultMaxUsers
+        );
+
+        return await _roomRepository.CreateAsync(newRoom);
+    }
+
+    public async Task AssignGuestToRoomAsync(Guid userId, Guid roomId)
+    {
+        var room = await _roomRepository.GetByIdAsync(roomId);
+        if (room == null)
+        {
+            throw new InvalidOperationException($"Room {roomId} not found");
+        }
+
+        // Проверить заполненность через репозиторий
+        var currentUsers = await _roomRepository.GetUserCountAsync(roomId);
+        if (currentUsers >= room.MaxUsers)
+        {
+            throw new InvalidOperationException($"Room {room.Name} is full");
+        }
+
+        // Установить маппинг пользователя → комната
+        await _roomRepository.SetUserRoomAsync(userId, roomId);
+
+        // Добавить пользователя в комнату
+        await _roomRepository.AddUserToRoomAsync(roomId, userId);
+
+        // Увеличить счетчик
+        await _roomRepository.IncrementUserCountAsync(roomId);
+
+        // Обновить LastActiveAt комнаты
+        room.UpdateLastActive();
+        await _roomRepository.UpdateAsync(room);
+
+        _logger.LogDebug("User {UserId} assigned to room {RoomName}", userId, room.Name);
+    }
+
+    public async Task RemoveUserFromRoomAsync(Guid userId)
+    {
+        var roomId = await _roomRepository.GetUserRoomAsync(userId);
+        if (roomId.HasValue)
+        {
+            await _roomRepository.RemoveUserFromRoomAsync(roomId.Value, userId);
+            await _roomRepository.DecrementUserCountAsync(roomId.Value);
+            await _roomRepository.RemoveUserRoomAsync(userId);
+
+            // Проверить, пуста ли комната
+            var userCount = await _roomRepository.GetUserCountAsync(roomId.Value);
+            if (userCount == 0)
             {
-                _logger.LogDebug("Found existing room: {RoomName} ({CurrentUsers}/{MaxUsers})",
-                    bestRoom.Name, bestRoom.CurrentUsers, bestRoom.MaxUsers);
-                return Task.FromResult(bestRoom);
-            }
-
-            // 2. Check for maximum number of rooms
-            if (_rooms.Count >= _options.MaxTotalRooms)
-            {
-                var leastBusy = _rooms.Values
-                    .Where(r => r.IsActive)
-                    .OrderBy(r => r.CurrentUsers)
-                    .FirstOrDefault();
-
-                if (leastBusy != null)
+                var room = await _roomRepository.GetByIdAsync(roomId.Value);
+                if (room?.Type == RoomType.System)
                 {
-                    _logger.LogDebug("Using least busy room: {RoomName}", leastBusy.Name);
-                    return Task.FromResult(leastBusy);
+                    await MarkRoomForDeletionAsync(roomId.Value);
                 }
             }
 
-            // 3. Check for empty rooms
-            var emptyRooms = _rooms.Values.Count(r => r.IsEmpty);
-            if (emptyRooms >= _options.MaxEmptyRooms)
-            {
-                var oldestEmpty = _rooms.Values
-                    .Where(r => r.IsEmpty)
-                    .OrderBy(r => r.LastActiveAt)
-                    .First();
-
-                oldestEmpty.UserJoined();
-                _logger.LogDebug("Reusing empty room: {RoomName}", oldestEmpty.Name);
-                return Task.FromResult(oldestEmpty);
-            }
-
-            // 4. Create new room
-            return Task.FromResult(CreateNewRoom());
+            _logger.LogDebug("User {UserId} removed from room {RoomId}", userId, roomId.Value);
         }
     }
 
-    public Task AssignGuestToRoomAsync(Guid userId, Guid roomId)
+    public async Task<ChatRoom?> GetRoomByUserIdAsync(Guid userId)
     {
-        lock (_roomLock)
+        var roomId = await _roomRepository.GetUserRoomAsync(userId);
+        if (roomId.HasValue)
         {
-            // Remove from old room
-            if (_userRoomMap.TryRemove(userId, out var oldRoomId))
-            {
-                if (_rooms.TryGetValue(oldRoomId, out var oldRoom))
-                {
-                    oldRoom.UserLeft();
-                    _logger.LogDebug("User {UserId} left room {RoomName}", userId, oldRoom.Name);
-                }
-            }
-
-            // Add to new room
-            if (!_rooms.TryGetValue(roomId, out var newRoom))
-            {
-                throw new InvalidOperationException($"Room {roomId} not found");
-            }
-
-            if (newRoom.CurrentUsers >= newRoom.MaxUsers)
-            {
-                throw new InvalidOperationException($"Room {newRoom.Name} is full");
-            }
-
-            if (!_userRoomMap.TryAdd(userId, roomId))
-            {
-                throw new InvalidOperationException($"User {userId} already in a room");
-            }
-
-            newRoom.UserJoined();
-            _logger.LogDebug("User {UserId} joined room {RoomName}", userId, newRoom.Name);
-
-            return Task.CompletedTask;
+            return await _roomRepository.GetByIdAsync(roomId.Value);
         }
+        return null;
     }
 
-    public Task RemoveUserFromRoomAsync(Guid userId)
+    public async Task CleanupEmptyRoomsAsync(TimeSpan emptyThreshold)
     {
-        lock (_roomLock)
-        {
-            if (_userRoomMap.TryRemove(userId, out var roomId))
-            {
-                if (_rooms.TryGetValue(roomId, out var room))
-                {
-                    room.UserLeft();
-                    _logger.LogDebug("User {UserId} left room {RoomName}", userId, room.Name);
-                }
-            }
-        }
-
-        return Task.CompletedTask;
-    }
-
-    public Task<ChatRoom?> GetRoomByUserIdAsync(Guid userId)
-    {
-        if (_userRoomMap.TryGetValue(userId, out var roomId))
-        {
-            _rooms.TryGetValue(roomId, out var room);
-            return Task.FromResult(room);
-        }
-        return Task.FromResult<ChatRoom?>(null);
-    }
-
-    public Task CleanupEmptyRoomsAsync(TimeSpan emptyThreshold)
-    {
-        var roomsToRemove = new List<Guid>();
+        // Очищать только системные комнаты
+        var allActiveRooms = await _roomRepository.GetAllActiveAsync(RoomType.System);
         var now = DateTimeOffset.UtcNow;
+        var roomsToRemove = new List<Guid>();
 
-        lock (_roomLock)
+        foreach (var room in allActiveRooms)
         {
-            foreach (var room in _rooms.Values)
+            var userCount = await _roomRepository.GetUserCountAsync(room.Id);
+            if (userCount == 0 && now - room.LastActiveAt > emptyThreshold)
             {
-                if (room.IsEmpty &&
-                    room.LastActiveAt.HasValue &&
-                    now - room.LastActiveAt.Value > emptyThreshold &&
-                    room != _rooms.Values.FirstOrDefault()) // Don't delete the first room
-                {
-                    roomsToRemove.Add(room.Id);
-                }
+                roomsToRemove.Add(room.Id);
             }
+        }
 
-            foreach (var roomId in roomsToRemove)
-            {
-                if (_rooms.TryRemove(roomId, out var removedRoom))
-                {
-                    _logger.LogInformation("Removed empty room: {RoomName}", removedRoom.Name);
-                }
-            }
+        foreach (var roomId in roomsToRemove)
+        {
+            await _roomRepository.DeleteAsync(roomId);
+            _logger.LogInformation("Cleaned up empty system room: {RoomId}", roomId);
         }
 
         if (roomsToRemove.Any())
         {
-            _logger.LogInformation("Active rooms: {RoomCount}, Total users: {TotalUsers}",
-                _rooms.Count, _rooms.Values.Sum(r => r.CurrentUsers));
-        }
-
-        return Task.CompletedTask;
-    }
-
-    public Task<int> GetActiveRoomsCountAsync()
-    {
-        lock (_roomLock)
-        {
-            var activeCount = _rooms.Values.Count(r => r.IsActive);
-            return Task.FromResult(activeCount);
+            var activeCount = await _roomRepository.GetAllActiveAsync();
+            _logger.LogInformation("Active rooms: {RoomCount}", activeCount.Count());
         }
     }
 
-    #endregion
-
-    #region Private methods
-
-    private ChatRoom CreateNewRoom()
+    public async Task<int> GetActiveRoomsCountAsync()
     {
-        const int maxAttempts = 3;
-        int attempts = 0;
+        var rooms = await _roomRepository.GetAllActiveAsync();
+        return rooms.Count();
+    }
 
-        while (attempts < maxAttempts)
+    public async Task<RoomInfoDto> CreateUserRoomAsync(string name, string? description, RoomType type, Guid createdBy, int maxUsers)
+    {
+        if (type == RoomType.System)
         {
-            var roomNumber = _rooms.Count + 1;
-            var newRoom = new ChatRoom($"General room #{roomNumber}", _options.DefaultMaxUsers);
+            throw new InvalidOperationException("Cannot create system rooms manually");
+        }
 
-            if (_rooms.TryAdd(newRoom.Id, newRoom))
+        // Проверить лимит комнат на пользователя (макс 5)
+        var userRoomCount = await _roomRepository.GetUserRoomCountAsync(createdBy);
+        if (userRoomCount >= 5)
+        {
+            throw new InvalidOperationException("Room limit exceeded (max 5 rooms per user)");
+        }
+
+        var room = new ChatRoom(name, type, maxUsers, createdBy, description);
+        var createdRoom = await _roomRepository.CreateAsync(room);
+
+        // Возвращаем DTO
+        return new RoomInfoDto
+        {
+            RoomId = createdRoom.Id,
+            RoomName = createdRoom.Name,
+            Description = createdRoom.Description,
+            Type = createdRoom.Type,
+            CurrentUsers = 0, // Новая комната, пользователей пока нет
+            MaxUsers = createdRoom.MaxUsers,
+            IsPrivate = createdRoom.Type == RoomType.Private
+        };
+    }
+
+    public async Task<RoomAssignmentData> JoinRoomAsync(Guid roomId, Guid userId, string? password = null)
+    {
+        var room = await _roomRepository.GetByIdAsync(roomId);
+        if (room == null)
+        {
+            throw new KeyNotFoundException($"Room {roomId} not found");
+        }
+
+        if (!room.IsActive)
+        {
+            throw new InvalidOperationException($"Room {room.Name} is not active");
+        }
+
+        // Проверить пароль для приватных комнат
+        if (room.Type == RoomType.Private && !string.IsNullOrEmpty(room.PasswordHash))
+        {
+            if (string.IsNullOrEmpty(password))
             {
-                _logger.LogInformation("Created new room: {RoomName}", newRoom.Name);
-                return newRoom;
+                throw new UnauthorizedAccessException("Password required for private room");
             }
 
-            attempts++;
-            _logger.LogWarning("Failed to add new room (attempt {Attempt}/{MaxAttempts})", attempts, maxAttempts);
-            Thread.SpinWait(1000); // Small delay before retry
+            // TODO: Implement password verification
+            // if (!BCrypt.Verify(password, room.PasswordHash))
+            //     throw new UnauthorizedAccessException("Invalid password");
         }
 
-        _logger.LogError("Failed to create new room after {MaxAttempts} attempts", maxAttempts);
-        throw new InvalidOperationException($"Failed to create new room after {maxAttempts} attempts");
+        // Проверить, не в комнате ли уже пользователь
+        var currentRoomId = await _roomRepository.GetUserRoomAsync(userId);
+        if (currentRoomId.HasValue && currentRoomId.Value == roomId)
+        {
+            // Уже в этой комнате
+            return new RoomAssignmentData
+            {
+                RoomId = room.Id,
+                RoomName = room.Name,
+                UsersInRoom = (int)await _roomRepository.GetUserCountAsync(roomId),
+                MaxUsers = room.MaxUsers
+            };
+        }
+
+        // Если пользователь уже в другой комнате — выйти
+        if (currentRoomId.HasValue)
+        {
+            await RemoveUserFromRoomAsync(userId);
+        }
+
+        // Назначить пользователя в комнату
+        await AssignGuestToRoomAsync(userId, roomId);
+
+        // Обновить LastRoomId у пользователя (для возврата)
+        await _userRepository.UpdateLastRoomIdAsync(userId, roomId);
+
+        return new RoomAssignmentData
+        {
+            RoomId = room.Id,
+            RoomName = room.Name,
+            UsersInRoom = (int)await _roomRepository.GetUserCountAsync(roomId),
+            MaxUsers = room.MaxUsers
+        };
+    }
+
+    public async Task LeaveRoomAsync(Guid userId, Guid roomId)
+    {
+        var currentRoomId = await _roomRepository.GetUserRoomAsync(userId);
+        if (currentRoomId.HasValue && currentRoomId.Value == roomId)
+        {
+            await RemoveUserFromRoomAsync(userId);
+        }
+    }
+
+    public async Task<IEnumerable<RoomInfoDto>> GetAvailableRoomsAsync(RoomType? type = null, Guid? userId = null)
+    {
+        // Получить все активные комнаты
+        var rooms = await _roomRepository.GetAllActiveAsync(type);
+
+        // Если указан userId, исключить приватные комнаты, в которых он не состоит
+        if (userId.HasValue)
+        {
+            var userRoomId = await _roomRepository.GetUserRoomAsync(userId.Value);
+            rooms = rooms.Where(r =>
+                r.Type != RoomType.Private || // Публичные и системные — все
+                r.CreatedBy == userId.Value || // Свои приватные
+                r.Id == userRoomId // Или уже в этой комнате
+            );
+        }
+
+        var result = new List<RoomInfoDto>();
+
+        foreach (var room in rooms)
+        {
+            var currentUsers = await _roomRepository.GetUserCountAsync(room.Id);
+
+            result.Add(new RoomInfoDto
+            {
+                RoomId = room.Id,
+                RoomName = room.Name,
+                Description = room.Description,
+                Type = room.Type,
+                CurrentUsers = currentUsers,
+                MaxUsers = room.MaxUsers,
+                IsPrivate = room.Type == RoomType.Private
+            });
+        }
+
+        // Сортировка: сначала System, затем Public, затем Private
+        // Внутри каждой группы — по алфавиту
+        return result.OrderBy(r => r.Type).ThenBy(r => r.RoomName);
+    }
+
+    public async Task MarkRoomForDeletionAsync(Guid roomId)
+    {
+        var room = await _roomRepository.GetByIdAsync(roomId);
+        if (room != null)
+        {
+            room.MarkAsInactive();
+            await _roomRepository.UpdateAsync(room);
+            _logger.LogInformation("Marked room {RoomId} as inactive", roomId);
+        }
     }
 
     #endregion
-}
 
-public class RoomServiceOptions
-{
-    public int MaxTotalRooms { get; set; } = 100;
-    public int MaxEmptyRooms { get; set; } = 10;
-    public int DefaultMaxUsers { get; set; } = 50;
+    public async Task<IEnumerable<RoomInfoDto>> GetRoomsAsync()
+    {
+        // Получить все активные комнаты (и системные, и публичные)
+        return await GetAvailableRoomsAsync(null, null);
+    }
 }

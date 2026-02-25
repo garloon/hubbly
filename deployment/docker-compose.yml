@@ -21,6 +21,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: hubbly-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - hubbly-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Hubbly API
   api:
     image: garloon/hubbly-api:latest
@@ -29,6 +47,7 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5000
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=hubbly;Username=hubbly;Password=${POSTGRES_PASSWORD:-hubbly_password_123}
+      - ConnectionStrings__Redis=redis:6379
       - Jwt__Secret=${JWT_SECRET:-hubbly-super-secure-jwt-secret-key-2026-32chars}
       - Jwt__Issuer=HubblySocialHub
       - Jwt__Audience=HubblyClient
@@ -41,6 +60,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - hubbly-network
     restart: unless-stopped
@@ -52,7 +73,8 @@ services:
       start_period: 40s
 
 volumes:
-  postgres_data:
+ postgres_data:
+ redis_data:
 
 networks:
   hubbly-network:

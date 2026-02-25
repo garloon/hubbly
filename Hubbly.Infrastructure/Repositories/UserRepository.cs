@@ -97,5 +97,21 @@ public class UserRepository : IUserRepository
         _logger.LogTrace("User updated successfully");
     }
 
+    public async Task UpdateLastRoomIdAsync(Guid userId, Guid? roomId)
+    {
+        _logger.LogDebug("Updating LastRoomId for user {UserId} to {RoomId}", userId, roomId);
+
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null)
+        {
+            throw new KeyNotFoundException($"User {userId} not found");
+        }
+
+        user.LastRoomId = roomId;
+        await _context.SaveChangesAsync();
+
+        _logger.LogDebug("LastRoomId updated successfully");
+    }
+
     #endregion
 }
