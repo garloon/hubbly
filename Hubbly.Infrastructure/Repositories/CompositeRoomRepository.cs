@@ -59,16 +59,44 @@ public class CompositeRoomRepository : IRoomRepository
 
     public async Task<ChatRoom> CreateAsync(ChatRoom room)
     {
+        ChatRoom result = null;
+        
+        // Always try to save to Redis first (primary storage)
         try
         {
-            var result = await _redisRepository.CreateAsync(room);
-            return result;
+            result = await _redisRepository.CreateAsync(room);
         }
         catch (RedisConnectionException ex)
         {
-            _logger.LogError(ex, "Redis connection error, falling back to DB for CreateAsync");
-            return await _dbRepository.CreateAsync(room);
+            _logger.LogError(ex, "Redis connection error in CreateAsync, will fallback to DB");
         }
+        
+        // Always also save to DB for persistence and fallback
+        try
+        {
+            var dbResult = await _dbRepository.CreateAsync(room);
+            // If Redis failed, use DB result
+            if (result == null)
+            {
+                result = dbResult;
+                _logger.LogInformation("Created room {RoomId} in DB only (Redis was unavailable)", dbResult.Id);
+            }
+            else
+            {
+                _logger.LogInformation("Created room {RoomId} in both Redis and DB", result.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create room in database");
+            // If both failed, throw
+            if (result == null)
+            {
+                throw;
+            }
+        }
+        
+        return result;
     }
 
     public async Task UpdateAsync(ChatRoom room)
