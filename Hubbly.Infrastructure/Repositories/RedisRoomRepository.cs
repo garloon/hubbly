@@ -42,16 +42,61 @@ public class RedisRoomRepository : IRoomRepository
     {
         if (entries == null || entries.Length == 0) return null;
 
-        var dict = new Dictionary<string, string>();
+        var dict = new Dictionary<string, object?>();
         foreach (var entry in entries)
         {
             var key = entry.Name.ToString() ?? string.Empty;
             var value = entry.Value.ToString() ?? string.Empty;
-            dict[key] = value;
+
+            // Determine the appropriate type based on ChatRoom properties
+            switch (key)
+            {
+                case "Id":
+                case "CreatedBy":
+                    if (Guid.TryParse(value, out var guid))
+                        dict[key] = guid;
+                    else
+                        dict[key] = null;
+                    break;
+                case "Type":
+                    if (int.TryParse(value, out var typeInt))
+                        dict[key] = (RoomType)typeInt;
+                    else
+                        dict[key] = RoomType.System; // default fallback
+                    break;
+                case "MaxUsers":
+                    if (int.TryParse(value, out var maxUsers))
+                        dict[key] = maxUsers;
+                    else
+                        dict[key] = 50; // default fallback
+                    break;
+                case "IsActive":
+                    if (bool.TryParse(value, out var isActive))
+                        dict[key] = isActive;
+                    else
+                        dict[key] = true; // default fallback
+                    break;
+                case "CreatedAt":
+                case "LastActiveAt":
+                case "UpdatedAt":
+                    if (DateTimeOffset.TryParse(value, out var dateTime))
+                        dict[key] = dateTime;
+                    else
+                        dict[key] = DateTimeOffset.UtcNow; // default fallback
+                    break;
+                default:
+                    // For string properties (Name, Description, PasswordHash)
+                    dict[key] = string.IsNullOrEmpty(value) ? null : value;
+                    break;
+            }
         }
 
         var json = JsonSerializer.Serialize(dict);
-        return JsonSerializer.Deserialize<ChatRoom>(json);
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+        return JsonSerializer.Deserialize<ChatRoom>(json, options);
     }
 
     #endregion
