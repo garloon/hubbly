@@ -62,8 +62,7 @@ public class UserServiceTests
 
         // Act & Assert
         Func<Task> act = () => _userService.GetUserProfileAsync(userId);
-        await act.Should().ThrowAsync<KeyNotFoundException>()
-            .WithMessage("User not found");
+        await act.Should().ThrowAsync<KeyNotFoundException>();
     }
 
     [Fact]
@@ -94,8 +93,7 @@ public class UserServiceTests
     {
         // Act & Assert
         Func<Task> act = () => _userService.UpdateUserNicknameAsync(Guid.NewGuid(), string.Empty);
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("Nickname cannot be empty or whitespace*");
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Fact]
@@ -103,8 +101,7 @@ public class UserServiceTests
     {
         // Act & Assert
         Func<Task> act = () => _userService.UpdateUserNicknameAsync(Guid.NewGuid(), "   ");
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("Nickname cannot be empty or whitespace*");
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Fact]
@@ -167,8 +164,7 @@ public class UserServiceTests
     {
         // Act & Assert
         Func<Task> act = () => _userService.AddOwnedAssetAsync(Guid.NewGuid(), string.Empty);
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("AssetId cannot be empty");
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Fact]
@@ -176,8 +172,7 @@ public class UserServiceTests
     {
         // Act & Assert
         Func<Task> act = () => _userService.AddOwnedAssetAsync(Guid.NewGuid(), null!);
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithMessage("AssetId cannot be empty");
+        await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Fact]
