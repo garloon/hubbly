@@ -672,13 +672,14 @@
 
             setupEventListeners() {
                 const canvas = document.getElementById('renderCanvas');
-                canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-                canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-                canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-                canvas.addEventListener('mouseleave', this.onMouseUp.bind(this));
-                canvas.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: false });
-                canvas.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
-                canvas.addEventListener('touchend', this.onTouchEnd.bind(this));
+                // DISABLED: Physical interactions (scroll/drag) - using MAUI controls only
+                // canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
+                // canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
+                // canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
+                // canvas.addEventListener('mouseleave', this.onMouseUp.bind(this));
+                // canvas.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: false });
+                // canvas.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
+                // canvas.addEventListener('touchend', this.onTouchEnd.bind(this));
                 window.addEventListener('resize', this.onWindowResize.bind(this));
             }
 
@@ -1006,55 +1007,23 @@
                 }
             }, 3000);
 
+            // DISABLED: Click interactions - using MAUI controls only
             window.handleClick = function (event) {
-                const currentTime = Date.now();
-                if (currentTime - lastClickTime < clickDelay) return;
-                lastClickTime = currentTime;
-
-                const rect = canvas.getBoundingClientRect();
-                const mouse = new THREE.Vector2();
-                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-                const raycaster = new THREE.Raycaster();
-                raycaster.setFromCamera(mouse, camera);
-                camera.updateMatrixWorld(true);
-
-                const intersects = raycaster.intersectObjects(window.clickableObjects, true);
-
-                if (intersects.length > 0) {
-                    let obj = intersects[0].object;
-                    while (obj && !obj.userData?.avatarId) {
-                        obj = obj.parent;
-                    }
-
-                    if (obj?.userData?.avatarId) {
-
-                        try {
-                            if (window.hubblyBridge && typeof window.hubblyBridge.postMessage === 'function') {
-                                window.hubblyBridge.postMessage(JSON.stringify({
-                                    type: 'avatar_clicked',
-                                    userId: obj.userData.avatarId
-                                }));
-                            }
-                        } catch (e) {
-                            console.error('Bridge communication failed:', e);
-                        }
-                    }
-                }
+                // No-op: clicks disabled
+                console.log('Click ignored - use MAUI controls');
             };
 
-            canvas.addEventListener('click', window.handleClick);
-            canvas.addEventListener('touchend', (event) => {
-                if (event.touches.length === 0) {
-                    const touch = event.changedTouches[0];
-                    const mouseEvent = new MouseEvent('click', {
-                        clientX: touch.clientX,
-                        clientY: touch.clientY
-                    });
-                    window.handleClick(mouseEvent);
-                }
-            });
+            // canvas.addEventListener('click', window.handleClick);
+            // canvas.addEventListener('touchend', (event) => {
+            //     if (event.touches.length === 0) {
+            //         const touch = event.changedTouches[0];
+            //         const mouseEvent = new MouseEvent('click', {
+            //             clientX: touch.clientX,
+            //             clientY: touch.clientY
+            //         });
+            //         window.handleClick(mouseEvent);
+            //     }
+            // });
         }
 
         window.hubbly3d = {
