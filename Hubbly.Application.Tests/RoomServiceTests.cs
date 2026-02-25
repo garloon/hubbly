@@ -31,27 +31,51 @@ public class RoomServiceTests
     [Fact]
     public async Task GetOrCreateRoomForGuestAsync_ShouldReturnRoom()
     {
+        // Arrange - setup repository to return null for GetOptimalRoomAsync (no existing room)
+        var newRoom = new ChatRoom("Test System Room", RoomType.System, 50);
+        _roomRepositoryMock
+            .Setup(r => r.GetOptimalRoomAsync(RoomType.System, 50))
+            .ReturnsAsync((ChatRoom?)null);
+        _roomRepositoryMock
+            .Setup(r => r.CreateAsync(It.IsAny<ChatRoom>()))
+            .ReturnsAsync(newRoom);
+
         // Act
         var result = await _roomService.GetOrCreateRoomForGuestAsync();
 
         // Assert
-        Assert.NotNull(result);
-        Assert.IsType<ChatRoom>(result);
+        result.Should().NotBeNull();
+        result.Should().Be(newRoom);
     }
 
     [Fact]
     public async Task GetOrCreateRoomForGuestAsync_MultipleCalls_ShouldReturnSameOrDifferentRooms()
     {
+        // Arrange - first two calls return existing room, third returns null (creates new)
+        var existingRoom = new ChatRoom("Existing System Room", RoomType.System, 50) { Id = Guid.NewGuid() };
+        var newRoom = new ChatRoom("New System Room", RoomType.System, 50) { Id = Guid.NewGuid() };
+        
+        var callCount = 0;
+        _roomRepositoryMock
+            .Setup(r => r.GetOptimalRoomAsync(RoomType.System, 50))
+            .Returns(() => Task.FromResult(callCount++ < 2 ? existingRoom : null));
+        _roomRepositoryMock
+            .Setup(r => r.CreateAsync(It.IsAny<ChatRoom>()))
+            .ReturnsAsync(newRoom);
+
         // Act - make multiple calls
         var room1 = await _roomService.GetOrCreateRoomForGuestAsync();
         var room2 = await _roomService.GetOrCreateRoomForGuestAsync();
         var room3 = await _roomService.GetOrCreateRoomForGuestAsync();
 
         // Assert
-        Assert.NotNull(room1);
-        Assert.NotNull(room2);
-        Assert.NotNull(room3);
-        // Rooms may be same or different depending on capacity
+        room1.Should().NotBeNull();
+        room2.Should().NotBeNull();
+        room3.Should().NotBeNull();
+        // room1 and room2 should be the same (existing from cache), room3 should be new (created)
+        room1.Should().Be(existingRoom);
+        room2.Should().Be(existingRoom);
+        room3.Should().Be(newRoom);
     }
 
     [Fact]
