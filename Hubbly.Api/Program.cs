@@ -82,6 +82,7 @@ public class Program
             {
                 // Get existing rooms to avoid duplicates
                 var existingRooms = await roomService.GetRoomsAsync();
+                logger.LogInformation("Test room init: Found {Count} existing rooms", existingRooms?.Count() ?? 0);
                 var existingRoomNames = existingRooms.Select(r => r.RoomName).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 
                 var testRooms = new[]
@@ -92,11 +93,14 @@ public class Program
                     new { Name = "Developers", Description = "Talk about coding", Type = Hubbly.Domain.Entities.RoomType.Public, MaxUsers = 20 }
                 };
                 
+                logger.LogInformation("Test room init: Attempting to create/verify {Count} test rooms", testRooms.Length);
+                
                 foreach (var testRoom in testRooms)
                 {
                     if (!existingRoomNames.Contains(testRoom.Name))
                     {
                         // Need to create with a dummy user ID - using Guid.Empty for system-created rooms
+                        logger.LogInformation("Test room init: Creating room {RoomName}", testRoom.Name);
                         var room = await roomService.CreateUserRoomAsync(
                             testRoom.Name,
                             testRoom.Description,
