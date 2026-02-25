@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Hubbly.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/rooms")]
 public class RoomController : ControllerBase
 {
     private readonly IRoomService _roomService;
