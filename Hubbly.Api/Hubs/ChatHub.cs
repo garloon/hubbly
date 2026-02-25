@@ -234,30 +234,30 @@ public class ChatHub : Hub
         }
     }
 
-    public async Task SendAnimation(string animationType)
+    public async Task SendAnimation(string animationType, string? targetUserId = null)
     {
-        var userId = Guid.Parse(Context.User!.FindFirst("userId")!.Value);
+        var callerUserId = Guid.Parse(Context.User!.FindFirst("userId")!.Value);
+        var targetUserIdToSend = string.IsNullOrEmpty(targetUserId) ? callerUserId.ToString() : targetUserId;
 
         try
         {
-            var room = await _roomService.GetRoomByUserIdAsync(userId);
+            var room = await _roomService.GetRoomByUserIdAsync(callerUserId);
             if (room == null)
             {
                 await Clients.Caller.SendAsync("ReceiveError", "You are not in a room");
                 return;
             }
 
-            await Clients.OthersInGroup(room.Id.ToString()).SendAsync("UserPlayAnimation",
-                userId.ToString(), animationType);
+            // Send to ALL users in the room (including caller)
+            await Clients.Group(room.Id.ToString()).SendAsync("UserPlayAnimation",
+                targetUserIdToSend, animationType);
 
-            await Clients.Caller.SendAsync("UserPlayAnimation",
-                userId.ToString(), animationType);
-
-            _logger.LogInformation("Animation {Animation} sent by user {UserId}", animationType, userId);
+            _logger.LogInformation("Animation {Animation} sent by user {CallerUserId} for target {TargetUserId}",
+                animationType, callerUserId, targetUserIdToSend);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SendAnimation error for user {UserId}", userId);
+            _logger.LogError(ex, "SendAnimation error for user {UserId}", callerUserId);
             await Clients.Caller.SendAsync("ReceiveError", "Failed to send animation");
         }
     }
