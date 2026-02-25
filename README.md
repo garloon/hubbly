@@ -2,7 +2,7 @@
 
 **Реальное время общения с 3D аватарами на SignalR и Three.js**
 
-[![.NET](https://img.shields.io/badge/.NET-8.0-blue)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-9.0-blue)](https://dotnet.microsoft.com/)
 [![SignalR](https://img.shields.io/badge/SignalR-Real--time-green)](https://dotnet.microsoft.com/apps/aspnet/signalr)
 [![Three.js](https://img.shields.io/badge/Three.js-3D-orange)](https://threejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-База%20данных-blue)](https://www.postgresql.org/)
@@ -81,7 +81,7 @@ Hubbly.Backend/
 
 ## 📋 Требования
 
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 - [PostgreSQL 14+](https://www.postgresql.org/download/)
 - Node.js (опционально, для разработки фронтенда)
 
