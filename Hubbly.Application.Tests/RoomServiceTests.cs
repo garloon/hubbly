@@ -82,12 +82,19 @@ public class RoomServiceTests
     public async Task RemoveUserFromRoomAsync_ShouldRemoveUserFromRoom()
     {
         // Arrange
+        var newRoom = new ChatRoom("Test System Room", RoomType.System, 50);
+        _roomRepositoryMock
+            .Setup(r => r.GetOptimalRoomAsync(RoomType.System, 50))
+            .ReturnsAsync((ChatRoom?)null);
+        _roomRepositoryMock
+            .Setup(r => r.GetAllActiveAsync(RoomType.System))
+            .ReturnsAsync(Enumerable.Empty<ChatRoom>());
+        _roomRepositoryMock
+            .Setup(r => r.CreateAsync(It.IsAny<ChatRoom>()))
+            .ReturnsAsync(newRoom);
+        
         var room = await _roomService.GetOrCreateRoomForGuestAsync();
         var userId = Guid.NewGuid();
-        
-        // First assign user to room (via internal method - we need to test through public API)
-        // Since there's no public method to assign a user directly, we'll test that
-        // removing a non-existent user does not throw and returns successfully
         
         // Act
         await _roomService.RemoveUserFromRoomAsync(userId);

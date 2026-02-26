@@ -76,52 +76,6 @@ public class Program
             var logger = seedScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
             await roomService.GetOrCreateRoomForGuestAsync();
             logger.LogInformation("Initial system room created or verified");
-            
-            // Create additional test rooms
-            try
-            {
-                // Get existing rooms to avoid duplicates
-                var existingRooms = await roomService.GetRoomsAsync();
-                logger.LogInformation("Test room init: Found {Count} existing rooms", existingRooms?.Count() ?? 0);
-                var existingRoomNames = existingRooms.Select(r => r.RoomName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                
-                var testRooms = new[]
-                {
-                    new { Name = "General Chat", Description = "Public chat for everyone", Type = Hubbly.Domain.Entities.RoomType.Public, MaxUsers = 50 },
-                    new { Name = "Gaming Zone", Description = "Discuss games and have fun", Type = Hubbly.Domain.Entities.RoomType.Public, MaxUsers = 30 },
-                    new { Name = "Music Lovers", Description = "Share your favorite music", Type = Hubbly.Domain.Entities.RoomType.Public, MaxUsers = 25 },
-                    new { Name = "Developers", Description = "Talk about coding", Type = Hubbly.Domain.Entities.RoomType.Public, MaxUsers = 20 }
-                };
-                
-                logger.LogInformation("Test room init: Attempting to create/verify {Count} test rooms", testRooms.Length);
-                
-                foreach (var testRoom in testRooms)
-                {
-                    if (!existingRoomNames.Contains(testRoom.Name))
-                    {
-                        // Need to create with a dummy user ID - using Guid.Empty for system-created rooms
-                        logger.LogInformation("Test room init: Creating room {RoomName}", testRoom.Name);
-                        var room = await roomService.CreateUserRoomAsync(
-                            testRoom.Name,
-                            testRoom.Description,
-                            testRoom.Type,
-                            Guid.Empty, // System-created test rooms
-                            testRoom.MaxUsers
-                        );
-                        logger.LogInformation("Created test room: {RoomName} (ID: {RoomId})", room.RoomName, room.RoomId);
-                    }
-                    else
-                    {
-                        logger.LogInformation("Test room already exists: {RoomName}", testRoom.Name);
-                    }
-                }
-                
-                logger.LogInformation("Test room initialization completed");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error creating test rooms");
-            }
         }
 
         // Configure middleware

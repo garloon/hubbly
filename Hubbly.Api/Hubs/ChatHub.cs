@@ -46,13 +46,18 @@ public class ChatHub : Hub
 
         using (_logger.BeginScope(new Dictionary<string, object> { ["ConnectionId"] = connectionId }))
         {
-            _logger.LogDebug("ChatHub.OnConnectedAsync started");
+            _logger.LogInformation("ChatHub.OnConnectedAsync started for connection {ConnectionId}", connectionId);
 
             if (!await ValidateConnectionAsync())
+            {
+                _logger.LogWarning("Connection validation failed for connection {ConnectionId}", connectionId);
                 return;
+            }
 
             var userIdClaim = Context.User!.FindFirst("userId")!;
             var userId = Guid.Parse(userIdClaim.Value);
+            
+            _logger.LogDebug("User {UserId} attempting to connect", userId);
 
             try
             {
@@ -68,12 +73,15 @@ public class ChatHub : Hub
                     return;
                 }
 
+                _logger.LogDebug("User {Nickname} (ID: {UserId}) authenticated", user.Nickname, userId);
+
                 // Determine room assignment
                 ChatRoom room;
                 
                 // For authenticated users with a valid last room, try to return to it
                 if (user.LastRoomId.HasValue)
                 {
+                    _logger.LogDebug("User {UserId} has LastRoomId: {LastRoomId}, attempting to rejoin", userId, user.LastRoomId.Value);
                     var lastRoom = await _roomRepository.GetByIdAsync(user.LastRoomId.Value);
                     var lastRoomUserCount = lastRoom != null ? await _roomRepository.GetUserCountAsync(lastRoom.Id) : 0;
                     if (lastRoom != null && lastRoomUserCount < lastRoom.MaxUsers)
@@ -81,14 +89,16 @@ public class ChatHub : Hub
                         // Rejoin the last room
                         await _roomService.JoinRoomAsync(lastRoom.Id, userId);
                         room = lastRoom;
-                        _logger.LogDebug("User returned to last room: {RoomName}", room.Name);
+                        _logger.LogInformation("User {Nickname} returned to last room: {RoomName} (ID: {RoomId}, Users: {Current}/{Max})",
+                            user.Nickname, room.Id, room.Name, lastRoomUserCount + 1, room.MaxUsers);
                     }
                     else
                     {
                         // Last room invalid, get system room and join it
                         room = await _roomService.GetOrCreateRoomForGuestAsync();
                         await _roomService.JoinRoomAsync(room.Id, userId);
-                        _logger.LogDebug("Assigned user to new system room: {RoomName}", room.Name);
+                        _logger.LogInformation("User {Nickname} assigned to new system room (last room full/invalid): {RoomName} (ID: {RoomId})",
+                            user.Nickname, room.Name, room.Id);
                     }
                 }
                 else
@@ -96,14 +106,18 @@ public class ChatHub : Hub
                     // No last room (first time), get system room and join it
                     room = await _roomService.GetOrCreateRoomForGuestAsync();
                     await _roomService.JoinRoomAsync(room.Id, userId);
-                    _logger.LogDebug("Assigned user to system room: {RoomName}", room.Name);
+                    _logger.LogInformation("User {Nickname} assigned to system room (first time): {RoomName} (ID: {RoomId})",
+                        user.Nickname, room.Name, room.Id);
                 }
 
                 // Update LastRoomId for the user (already updated in JoinRoomAsync/AssignGuestToRoomAsync)
 
                 // Track connection in Redis (replaces _connectedUsers)
+                _logger.LogDebug("Tracking connection {ConnectionId} for user {UserId} in room {RoomId}",
+                    connectionId, userId, room.Id);
                 await _roomRepository.TrackConnectionAsync(connectionId, userId, room.Id);
                 
+                _logger.LogDebug("Adding connection {ConnectionId} to group {RoomId}", connectionId, room.Id);
                 await Groups.AddToGroupAsync(connectionId, room.Id.ToString());
 
                 // Send room information
@@ -116,8 +130,8 @@ public class ChatHub : Hub
                 await NotifyUserJoinedAsync(userId, user.Nickname, user.AvatarConfigJson, room.Id);
 
                 var userCount = await _roomRepository.GetUserCountAsync(room.Id);
-                _logger.LogInformation("User {Nickname} (ID: {UserId}) connected to room {RoomName} ({Users}/{Max})",
-                    user.Nickname, userId, room.Name, userCount, room.MaxUsers);
+                _logger.LogInformation("User {Nickname} (ID: {UserId}) successfully connected to room {RoomName} (ID: {RoomId}, Users: {Users}/{Max})",
+                    user.Nickname, userId, room.Name, room.Id, userCount, room.MaxUsers);
             }
             catch (Exception ex)
             {
@@ -127,6 +141,7 @@ public class ChatHub : Hub
             }
 
             await base.OnConnectedAsync();
+            _logger.LogDebug("OnConnectedAsync completed for connection {ConnectionId}", connectionId);
         }
     }
 
@@ -331,19 +346,28 @@ public class ChatHub : Hub
 
     private async Task CleanupExistingConnectionAsync(Guid userId)
     {
+        _logger.LogDebug("CleanupExistingConnectionAsync called for user {UserId}", userId);
+        
         // Get all connection IDs for this user from Redis
         var existingConnectionIds = await _roomRepository.GetConnectionIdsByUserIdAsync(userId);
         
         if (existingConnectionIds.Any())
         {
-            _logger.LogInformation("User {UserId} has {Count} existing connections, cleaning up",
-                userId, existingConnectionIds.Count());
+            _logger.LogInformation("User {UserId} has {Count} existing connections, cleaning up: {ConnectionIds}",
+                userId, existingConnectionIds.Count(), string.Join(", ", existingConnectionIds));
             
             // Remove all old connections from Redis
             foreach (var connectionId in existingConnectionIds)
             {
+                _logger.LogDebug("Removing old connection {ConnectionId} for user {UserId}", connectionId, userId);
                 await _roomRepository.RemoveConnectionAsync(connectionId);
             }
+            
+            _logger.LogInformation("Cleaned up all existing connections for user {UserId}", userId);
+        }
+        else
+        {
+            _logger.LogDebug("No existing connections found for user {UserId}", userId);
         }
     }
 
@@ -402,10 +426,17 @@ public class ChatHub : Hub
     {
         try
         {
+            _logger.LogDebug("HandleDisconnectAsync called for user {UserId}, connection {ConnectionId}", userId, connectionId);
+            
             // Connection already removed from Redis in OnDisconnectedAsync
             // Just handle room leaving and notifications
 
             var room = await _roomService.GetRoomByUserIdAsync(userId);
+            if (room != null)
+            {
+                _logger.LogDebug("User {UserId} is in room {RoomName} (ID: {RoomId})", userId, room.Name, room.Id);
+            }
+            
             await _roomService.RemoveUserFromRoomAsync(userId);
 
             if (room != null)
@@ -413,9 +444,14 @@ public class ChatHub : Hub
                 // Check if user has any other active connections
                 var userConnectionIds = await _roomRepository.GetConnectionIdsByUserIdAsync(userId);
                 
+                _logger.LogDebug("User {UserId} has {Count} remaining connections after disconnect: {Connections}",
+                    userId, userConnectionIds.Count(), string.Join(", ", userConnectionIds));
+                
                 // Only send UserLeft if this was the user's last connection overall
                 if (!userConnectionIds.Any())
                 {
+                    _logger.LogInformation("User {UserId} completely disconnected (no remaining connections), sending UserLeft notification", userId);
+                    
                     // Need to get nickname from database since we don't store it in memory
                     var user = await _userRepository.GetByIdAsync(userId);
                     var nickname = user?.Nickname ?? "User";
@@ -427,8 +463,17 @@ public class ChatHub : Hub
                         LeftAt = DateTimeOffset.UtcNow
                     });
                 }
+                else
+                {
+                    _logger.LogInformation("User {UserId} still has {Count} active connections, not sending UserLeft",
+                        userId, userConnectionIds.Count());
+                }
 
                 _logger.LogInformation("User {UserId} left room {RoomName}", userId, room.Name);
+            }
+            else
+            {
+                _logger.LogWarning("HandleDisconnectAsync: Room not found for user {UserId}", userId);
             }
         }
         catch (Exception ex)

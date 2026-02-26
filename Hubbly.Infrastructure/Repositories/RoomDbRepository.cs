@@ -162,13 +162,13 @@ public class RoomDbRepository : IRoomRepository
 
     public async Task<ChatRoom?> GetOptimalRoomAsync(RoomType type, int maxUsers)
     {
-        // Fallback режим: возвращаем первую найденную комнату подходящего типа и емкости
-        // (сортировка по заполненности невозможна без актуального CurrentUsers)
-        var room = await _context.ChatRooms
-            .Where(r => r.Type == type && r.MaxUsers >= maxUsers)
-            .FirstOrDefaultAsync();
+        // Fallback режим: ищем комнату с максимальной заполненностью, но не полную
+        var rooms = await _context.ChatRooms
+            .Where(r => r.Type == type && r.MaxUsers >= maxUsers && r.CurrentUsers < r.MaxUsers)
+            .OrderByDescending(r => r.CurrentUsers)
+            .ToListAsync();
 
-        return room;
+        return rooms.FirstOrDefault();
     }
 
     public async Task<IEnumerable<ChatRoom>> GetRoomsByCreatedByAsync(Guid userId)

@@ -30,18 +30,24 @@ public class RoomService : IRoomService
 
     public async Task<ChatRoom> GetOrCreateRoomForGuestAsync()
     {
+        _logger.LogDebug("GetOrCreateRoomForGuestAsync called");
+        
         // Ищем оптимальную системную комнату
         var room = await _roomRepository.GetOptimalRoomAsync(RoomType.System, _options.DefaultMaxUsers);
 
         if (room != null)
         {
-            _logger.LogDebug("Found existing system room: {RoomName} ({RoomId})", room.Name, room.Id);
+            _logger.LogInformation("Found existing system room: {RoomName} (ID: {RoomId}, Users: {Current}/{Max})",
+                room.Name, room.Id, room.CurrentUsers, room.MaxUsers);
             return room;
         }
 
         // GetOptimalRoomAsync вернул null - все существующие комнаты полны или их нет
+        _logger.LogWarning("No available system room found (all full or none exist), creating new one");
+        
         // Генерируем уникальное имя для новой системной комнаты
         var roomName = await GenerateSystemRoomNameAsync();
+        _logger.LogInformation("Generated new system room name: {RoomName}", roomName);
 
         var newRoom = new ChatRoom(
             roomName,
@@ -49,7 +55,11 @@ public class RoomService : IRoomService
             _options.DefaultMaxUsers
         );
 
-        return await _roomRepository.CreateAsync(newRoom);
+        var createdRoom = await _roomRepository.CreateAsync(newRoom);
+        _logger.LogInformation("Created new system room: {RoomName} (ID: {RoomId})",
+            createdRoom.Name, createdRoom.Id);
+        
+        return createdRoom;
     }
 
     /// <summary>
@@ -62,14 +72,17 @@ public class RoomService : IRoomService
         var allSystemRooms = await _roomRepository.GetAllActiveAsync(RoomType.System);
         int maxNum = 0;
 
-        foreach (var room in allSystemRooms)
+        if (allSystemRooms != null)
         {
-            if (room.Name.StartsWith("Общая комната #"))
+            foreach (var room in allSystemRooms)
             {
-                var numPart = room.Name.Split('#')[1];
-                if (int.TryParse(numPart, out int num))
+                if (room.Name.StartsWith("Общая комната #"))
                 {
-                    maxNum = Math.Max(maxNum, num);
+                    var numPart = room.Name.Split('#')[1];
+                    if (int.TryParse(numPart, out int num))
+                    {
+                        maxNum = Math.Max(maxNum, num);
+                    }
                 }
             }
         }
