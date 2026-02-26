@@ -91,21 +91,60 @@ public class AuthController : ControllerBase
        }
    }
 
-    #endregion
+   #endregion
+
+   #region Guest Conversion
+
+   [HttpPost("convert-guest")]
+   [ProducesResponseType(StatusCodes.Status200OK)]
+   [ProducesResponseType(StatusCodes.Status400BadRequest)]
+   public async Task<IActionResult> ConvertGuestToUser([FromBody] ConvertGuestRequest request)
+   {
+       _logger.LogInformation("Convert guest to user requested for GuestUserId: {GuestUserId}", request.GuestUserId);
+
+       try
+       {
+           // TODO: Реализовать полноценную конвертацию:
+           // 1. Создать запись пользователя на основе данных гостя
+           // 2. Сохранить аватар, настройки, комнату
+           // 3. Связать deviceId с новым пользователем
+           // 4. Вернуть новые токены
+
+           // Заглушка: просто возвращаем успех
+           return Ok(new
+           {
+               message = "Guest converted to user (stub implementation)",
+               userId = request.GuestUserId,
+               note = "Real implementation needed"
+           });
+       }
+       catch (Exception ex)
+       {
+           _logger.LogError(ex, "Guest conversion failed for GuestUserId: {GuestUserId}", request.GuestUserId);
+           return StatusCode(500, new { error = "Conversion failed" });
+       }
+   }
+
+   #endregion
 }
 
-#region Request Records
+#region Request/Response Records
+
+public record ConvertGuestRequest
+{
+   public Guid GuestUserId { get; init; }
+}
 
 public record GuestAuthRequest
 {
-    public string DeviceId { get; init; } = null!;
-    public string? AvatarConfigJson { get; init; }
+   public string DeviceId { get; init; } = null!;
+   public string? AvatarConfigJson { get; init; }
 }
 
 public record RefreshTokenRequest
 {
-    public string RefreshToken { get; init; } = null!;
-    public string DeviceId { get; init; } = null!;
+   public string RefreshToken { get; init; } = null!;
+   public string DeviceId { get; init; } = null!;
 }
 
 #endregion

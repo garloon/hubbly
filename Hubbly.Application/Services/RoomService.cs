@@ -39,15 +39,55 @@ public class RoomService : IRoomService
             return room;
         }
 
-        // Если нет системных комнат, создаем первую
-        _logger.LogInformation("No system rooms found, creating first system room");
+        // GetOptimalRoomAsync вернул null
+        // Проверяем, есть ли вообще активные системные комнаты
+        var allSystemRooms = await _roomRepository.GetAllActiveAsync(RoomType.System);
+
+        if (allSystemRooms.Any())
+        {
+            // Есть активные, но все полные (или ошибка в GetOptimalRoomAsync)
+            _logger.LogInformation("All system rooms are full or unavailable, creating a new one. Active count: {Count}", allSystemRooms.Count());
+        }
+        else
+        {
+            // Нет активных системных комнат вообще
+            _logger.LogInformation("No system rooms exist, creating first one");
+        }
+
+        // Генерируем уникальное имя для новой системной комнаты
+        var roomName = await GenerateSystemRoomNameAsync();
+
         var newRoom = new ChatRoom(
-            "General room #1",
+            roomName,
             RoomType.System,
             _options.DefaultMaxUsers
         );
 
         return await _roomRepository.CreateAsync(newRoom);
+    }
+
+    /// <summary>
+    /// Генерирует уникальное имя для новой системной комнаты
+    /// Формат: "Общая комната #N", где N = максимальный номер + 1
+    /// </summary>
+    private async Task<string> GenerateSystemRoomNameAsync()
+    {
+        var allSystemRooms = await _roomRepository.GetAllActiveAsync(RoomType.System);
+        int maxNum = 0;
+
+        foreach (var room in allSystemRooms)
+        {
+            if (room.Name.StartsWith("Общая комната #"))
+            {
+                var numPart = room.Name.Split('#')[1];
+                if (int.TryParse(numPart, out int num))
+                {
+                    maxNum = Math.Max(maxNum, num);
+                }
+            }
+        }
+
+        return $"Общая комната #{maxNum + 1}";
     }
 
     public async Task AssignGuestToRoomAsync(Guid userId, Guid roomId)
