@@ -78,7 +78,7 @@ public class ChatHub : Hub
                 {
                     var lastRoom = await _roomRepository.GetByIdAsync(user.LastRoomId.Value);
                     var lastRoomUserCount = lastRoom != null ? await _roomRepository.GetUserCountAsync(lastRoom.Id) : 0;
-                    if (lastRoom != null && lastRoom.IsActive && lastRoomUserCount < lastRoom.MaxUsers)
+                    if (lastRoom != null && lastRoomUserCount < lastRoom.MaxUsers)
                     {
                         // Rejoin the last room
                         await _roomService.JoinRoomAsync(lastRoom.Id, userId);

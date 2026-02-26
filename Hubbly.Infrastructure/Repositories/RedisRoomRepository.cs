@@ -70,11 +70,11 @@ public class RedisRoomRepository : IRoomRepository
                     else
                         dict[key] = 50; // default fallback
                     break;
-                case "IsActive":
-                    if (bool.TryParse(value, out var isActive))
-                        dict[key] = isActive;
+                case "CurrentUsers":
+                    if (int.TryParse(value, out var currentUsers))
+                        dict[key] = currentUsers;
                     else
-                        dict[key] = true; // default fallback
+                        dict[key] = 0; // default fallback
                     break;
                 case "CreatedAt":
                 case "LastActiveAt":
@@ -123,7 +123,7 @@ public class RedisRoomRepository : IRoomRepository
             if (Guid.TryParse(roomIdValue, out var roomId))
             {
                 var room = await GetByIdAsync(roomId);
-                if (room != null && room.IsActive)
+                if (room != null)
                 {
                     rooms.Add(room);
                 }
@@ -155,19 +155,11 @@ public class RedisRoomRepository : IRoomRepository
         var hash = SerializeRoomToHash(room);
         await _db.HashSetAsync(roomKey, hash);
 
-        // Обновить в sorted set, если комната активна, иначе удалить из active set
+        // Всегда обновлять в sorted set на основе LastActiveAt
         var activeRoomsKey = GetActiveRoomsKey(room.Type);
-        if (room.IsActive)
-        {
-            await _db.SortedSetAddAsync(activeRoomsKey, new[] { new SortedSetEntry(room.Id.ToString(), room.LastActiveAt.ToUnixTimeSeconds()) });
-        }
-        else
-        {
-            // Удалить из active set если комната стала неактивной
-            await _db.SortedSetRemoveAsync(activeRoomsKey, room.Id.ToString());
-        }
+        await _db.SortedSetAddAsync(activeRoomsKey, new[] { new SortedSetEntry(room.Id.ToString(), room.LastActiveAt.ToUnixTimeSeconds()) });
 
-        _logger.LogDebug("Updated room {RoomId} in Redis (IsActive={IsActive})", room.Id, room.IsActive);
+        _logger.LogDebug("Updated room {RoomId} in Redis", room.Id);
     }
 
     public async Task DeleteAsync(Guid roomId)
@@ -291,7 +283,7 @@ public class RedisRoomRepository : IRoomRepository
 
     public async Task<ChatRoom?> GetOptimalRoomAsync(RoomType type, int maxUsers)
     {
-        // Получить все активные комнаты указанного типа
+        // Получить все комнаты указанного типа (без фильтра по IsActive)
         var activeRoomsKey = GetActiveRoomsKey(type);
         var roomIds = await _db.SortedSetRangeByRankAsync(activeRoomsKey, 0, -1);
 
@@ -306,13 +298,13 @@ public class RedisRoomRepository : IRoomRepository
             if (Guid.TryParse(roomIdValue, out var roomId))
             {
                 var room = await GetByIdAsync(roomId);
-                if (room != null && room.IsActive && room.MaxUsers >= maxUsers)
+                if (room != null && room.MaxUsers >= maxUsers)
                 {
                     // Получить текущее количество пользователей
                     var currentUsers = await GetUserCountAsync(roomId);
 
-                    _logger.LogDebug("Room {RoomId}: IsActive={IsActive}, MaxUsers={Max}, CurrentUsers={Current}",
-                        roomId, room.IsActive, room.MaxUsers, currentUsers);
+                    _logger.LogDebug("Room {RoomId}: MaxUsers={Max}, CurrentUsers={Current}",
+                        roomId, room.MaxUsers, currentUsers);
 
                     // Искать комнату с максимальным количеством пользователей, но не полную
                     if (currentUsers < room.MaxUsers && currentUsers > bestCurrentUsers)

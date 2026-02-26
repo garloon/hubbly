@@ -31,7 +31,7 @@ public class RoomDbRepository : IRoomRepository
             query = query.Where(r => r.Type == type.Value);
         }
 
-        return await query.Where(r => r.IsActive).ToListAsync();
+        return await query.ToListAsync();
     }
 
     public async Task<ChatRoom> CreateAsync(ChatRoom room)
@@ -68,10 +68,12 @@ public class RoomDbRepository : IRoomRepository
         var room = await _context.ChatRooms.FindAsync(roomId);
         if (room == null) return 0;
 
-        // В БД мы не храним CurrentUsers, только для аудита
-        // Эта операция только для Redis, но в fallback режиме возвращаем 0
-        _logger.LogWarning("IncrementUserCountAsync called in DB fallback mode - no-op");
-        return 0;
+        room.CurrentUsers++;
+        room.UpdatedAt = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
+
+        _logger.LogDebug("Incremented user count for room {RoomId} to {Count}", roomId, room.CurrentUsers);
+        return room.CurrentUsers;
     }
 
     public async Task<int> DecrementUserCountAsync(Guid roomId)
@@ -79,15 +81,21 @@ public class RoomDbRepository : IRoomRepository
         var room = await _context.ChatRooms.FindAsync(roomId);
         if (room == null) return 0;
 
-        _logger.LogWarning("DecrementUserCountAsync called in DB fallback mode - no-op");
-        return 0;
+        if (room.CurrentUsers > 0)
+        {
+            room.CurrentUsers--;
+        }
+        room.UpdatedAt = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
+
+        _logger.LogDebug("Decremented user count for room {RoomId} to {Count}", roomId, room.CurrentUsers);
+        return room.CurrentUsers;
     }
 
-    public Task<int> GetUserCountAsync(Guid roomId)
+    public async Task<int> GetUserCountAsync(Guid roomId)
     {
-        // В fallback режиме не можем точно определить кол-во пользователей
-        _logger.LogWarning("GetUserCountAsync called in DB fallback mode - returning 0");
-        return Task.FromResult(0);
+        var room = await _context.ChatRooms.FindAsync(roomId);
+        return room?.CurrentUsers ?? 0;
     }
 
     public Task AddUserToRoomAsync(Guid roomId, Guid userId)
@@ -147,10 +155,10 @@ public class RoomDbRepository : IRoomRepository
 
     public async Task<ChatRoom?> GetOptimalRoomAsync(RoomType type, int maxUsers)
     {
-        // Fallback режим: возвращаем первую найденную активную комнату
-        // (сортировка по заполненности невозможна без CurrentUsers в БД)
+        // Fallback режим: возвращаем первую найденную комнату подходящего типа и емкости
+        // (сортировка по заполненности невозможна без актуального CurrentUsers)
         var room = await _context.ChatRooms
-            .Where(r => r.IsActive && r.Type == type && r.MaxUsers >= maxUsers)
+            .Where(r => r.Type == type && r.MaxUsers >= maxUsers)
             .FirstOrDefaultAsync();
 
         return room;
@@ -159,13 +167,13 @@ public class RoomDbRepository : IRoomRepository
     public async Task<IEnumerable<ChatRoom>> GetRoomsByCreatedByAsync(Guid userId)
     {
         return await _context.ChatRooms
-            .Where(r => r.CreatedBy == userId && r.IsActive)
+            .Where(r => r.CreatedBy == userId)
             .ToListAsync();
     }
 
     public async Task<int> GetUserRoomCountAsync(Guid userId)
     {
         return await _context.ChatRooms
-            .CountAsync(r => r.CreatedBy == userId && r.IsActive);
+            .CountAsync(r => r.CreatedBy == userId);
     }
 }

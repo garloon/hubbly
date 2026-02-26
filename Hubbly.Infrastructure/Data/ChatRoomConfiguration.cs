@@ -29,9 +29,9 @@ public class ChatRoomConfiguration : IEntityTypeConfiguration<ChatRoom>
         builder.Property(r => r.PasswordHash)
             .HasMaxLength(255);
 
-        builder.Property(r => r.IsActive)
+        builder.Property(r => r.CurrentUsers)
             .IsRequired()
-            .HasDefaultValue(true);
+            .HasDefaultValue(0);
 
         builder.Property(r => r.CreatedAt)
             .IsRequired();
@@ -43,16 +43,10 @@ public class ChatRoomConfiguration : IEntityTypeConfiguration<ChatRoom>
             .IsRequired();
 
         // Indexes
-        builder.HasIndex(r => r.IsActive)
-            .HasDatabaseName("IX_ChatRooms_IsActive");
-
         builder.HasIndex(r => r.LastActiveAt)
             .HasDatabaseName("IX_ChatRooms_LastActiveAt");
 
         builder.HasIndex(r => r.Type)
             .HasDatabaseName("IX_ChatRooms_Type");
-
-        builder.HasIndex(r => new { r.IsActive, r.Type })
-            .HasDatabaseName("IX_ChatRooms_IsActive_Type");
     }
 }

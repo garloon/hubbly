@@ -39,21 +39,7 @@ public class RoomService : IRoomService
             return room;
         }
 
-        // GetOptimalRoomAsync вернул null
-        // Проверяем, есть ли вообще активные системные комнаты
-        var allSystemRooms = await _roomRepository.GetAllActiveAsync(RoomType.System);
-
-        if (allSystemRooms.Any())
-        {
-            // Есть активные, но все полные (или ошибка в GetOptimalRoomAsync)
-            _logger.LogInformation("All system rooms are full or unavailable, creating a new one. Active count: {Count}", allSystemRooms.Count());
-        }
-        else
-        {
-            // Нет активных системных комнат вообще
-            _logger.LogInformation("No system rooms exist, creating first one");
-        }
-
+        // GetOptimalRoomAsync вернул null - все существующие комнаты полны или их нет
         // Генерируем уникальное имя для новой системной комнаты
         var roomName = await GenerateSystemRoomNameAsync();
 
@@ -72,6 +58,7 @@ public class RoomService : IRoomService
     /// </summary>
     private async Task<string> GenerateSystemRoomNameAsync()
     {
+        // Получаем ВСЕ системные комнаты (включая пустые и неактивные) для корректной нумерации
         var allSystemRooms = await _roomRepository.GetAllActiveAsync(RoomType.System);
         int maxNum = 0;
 
@@ -130,17 +117,6 @@ public class RoomService : IRoomService
             await _roomRepository.DecrementUserCountAsync(roomId.Value);
             await _roomRepository.RemoveUserRoomAsync(userId);
 
-            // Проверить, пуста ли комната
-            var userCount = await _roomRepository.GetUserCountAsync(roomId.Value);
-            if (userCount == 0)
-            {
-                var room = await _roomRepository.GetByIdAsync(roomId.Value);
-                if (room?.Type == RoomType.System)
-                {
-                    await MarkRoomForDeletionAsync(roomId.Value);
-                }
-            }
-
             _logger.LogDebug("User {UserId} removed from room {RoomId}", userId, roomId.Value);
         }
     }
@@ -158,12 +134,18 @@ public class RoomService : IRoomService
     public async Task CleanupEmptyRoomsAsync(TimeSpan emptyThreshold)
     {
         // Очищать только системные комнаты
-        var allActiveRooms = await _roomRepository.GetAllActiveAsync(RoomType.System);
+        var allSystemRooms = await _roomRepository.GetAllActiveAsync(RoomType.System);
         var now = DateTimeOffset.UtcNow;
         var roomsToRemove = new List<Guid>();
 
-        foreach (var room in allActiveRooms)
+        foreach (var room in allSystemRooms)
         {
+            // Никогда не удалять "Общая комната #1"
+            if (room.Name == "Общая комната #1")
+            {
+                continue;
+            }
+
             var userCount = await _roomRepository.GetUserCountAsync(room.Id);
             if (userCount == 0 && now - room.LastActiveAt > emptyThreshold)
             {
@@ -179,8 +161,8 @@ public class RoomService : IRoomService
 
         if (roomsToRemove.Any())
         {
-            var activeCount = await _roomRepository.GetAllActiveAsync();
-            _logger.LogInformation("Active rooms: {RoomCount}", activeCount.Count());
+            var allRooms = await _roomRepository.GetAllActiveAsync();
+            _logger.LogInformation("Total rooms after cleanup: {RoomCount}", allRooms.Count());
         }
     }
 
@@ -226,11 +208,6 @@ public class RoomService : IRoomService
         if (room == null)
         {
             throw new KeyNotFoundException($"Room {roomId} not found");
-        }
-
-        if (!room.IsActive)
-        {
-            throw new InvalidOperationException($"Room {room.Name} is not active");
         }
 
         // Проверить пароль для приватных комнат
@@ -292,7 +269,7 @@ public class RoomService : IRoomService
 
     public async Task<IEnumerable<RoomInfoDto>> GetAvailableRoomsAsync(RoomType? type = null, Guid? userId = null)
     {
-        // Получить все активные комнаты
+        // Получить все комнаты (без фильтра по IsActive)
         var rooms = await _roomRepository.GetAllActiveAsync(type);
 
         // Если указан userId, исключить приватные комнаты, в которых он не состоит
@@ -312,6 +289,14 @@ public class RoomService : IRoomService
         {
             var currentUsers = await _roomRepository.GetUserCountAsync(room.Id);
 
+            // Показывать только комнаты, где есть свободные места (или пользователь уже в них)
+            // Если пользователь уже в комнате, показываем ее даже если заполнена
+            var isUserInRoom = userId.HasValue && (await _roomRepository.GetUserRoomAsync(userId.Value)) == room.Id;
+            if (currentUsers >= room.MaxUsers && !isUserInRoom)
+            {
+                continue; // Пропустить заполненную комнату
+            }
+
             result.Add(new RoomInfoDto
             {
                 RoomId = room.Id,
@@ -327,17 +312,6 @@ public class RoomService : IRoomService
         // Сортировка: сначала System, затем Public, затем Private
         // Внутри каждой группы — по алфавиту
         return result.OrderBy(r => r.Type).ThenBy(r => r.RoomName);
-    }
-
-    public async Task MarkRoomForDeletionAsync(Guid roomId)
-    {
-        var room = await _roomRepository.GetByIdAsync(roomId);
-        if (room != null)
-        {
-            room.MarkAsInactive();
-            await _roomRepository.UpdateAsync(room);
-            _logger.LogInformation("Marked room {RoomId} as inactive", roomId);
-        }
     }
 
     #endregion

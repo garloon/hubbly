@@ -18,7 +18,7 @@ public class ChatRoom
     public int MaxUsers { get; set; }
     public Guid? CreatedBy { get; set; } // null для системных комнат
     public string? PasswordHash { get; set; } // только для Private комнат
-    public bool IsActive { get; set; } = true;
+    public int CurrentUsers { get; set; } = 0;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset LastActiveAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
@@ -37,18 +37,12 @@ public class ChatRoom
         CreatedAt = DateTimeOffset.UtcNow;
         LastActiveAt = DateTimeOffset.UtcNow;
         UpdatedAt = DateTimeOffset.UtcNow;
-        IsActive = true;
+        CurrentUsers = 0;
     }
 
     public void UpdateLastActive()
     {
         LastActiveAt = DateTimeOffset.UtcNow;
-        UpdatedAt = DateTimeOffset.UtcNow;
-    }
-
-    public void MarkAsInactive()
-    {
-        IsActive = false;
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 
