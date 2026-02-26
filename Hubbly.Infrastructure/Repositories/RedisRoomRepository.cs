@@ -42,51 +42,54 @@ public class RedisRoomRepository : IRoomRepository
     {
         if (entries == null || entries.Length == 0) return null;
 
-        var dict = new Dictionary<string, object?>();
+        var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in entries)
         {
             var key = entry.Name.ToString() ?? string.Empty;
             var value = entry.Value.ToString() ?? string.Empty;
 
+            // Normalize key to proper casing for ChatRoom properties
+            var normalizedKey = NormalizeKey(key);
+
             // Determine the appropriate type based on ChatRoom properties
-            switch (key)
+            switch (normalizedKey)
             {
                 case "Id":
                 case "CreatedBy":
                     if (Guid.TryParse(value, out var guid))
-                        dict[key] = guid;
+                        dict[normalizedKey] = guid;
                     else
-                        dict[key] = null;
+                        dict[normalizedKey] = null;
                     break;
                 case "Type":
                     if (int.TryParse(value, out var typeInt))
-                        dict[key] = (RoomType)typeInt;
+                        dict[normalizedKey] = (RoomType)typeInt;
                     else
-                        dict[key] = RoomType.System; // default fallback
+                        dict[normalizedKey] = RoomType.System; // default fallback
                     break;
                 case "MaxUsers":
                     if (int.TryParse(value, out var maxUsers))
-                        dict[key] = maxUsers;
+                        dict[normalizedKey] = maxUsers;
                     else
-                        dict[key] = 50; // default fallback
+                        dict[normalizedKey] = 50; // default fallback
                     break;
                 case "CurrentUsers":
                     if (int.TryParse(value, out var currentUsers))
-                        dict[key] = currentUsers;
+                        dict[normalizedKey] = currentUsers;
                     else
-                        dict[key] = 0; // default fallback
+                        dict[normalizedKey] = 0; // default fallback
                     break;
                 case "CreatedAt":
                 case "LastActiveAt":
                 case "UpdatedAt":
                     if (DateTimeOffset.TryParse(value, out var dateTime))
-                        dict[key] = dateTime;
+                        dict[normalizedKey] = dateTime;
                     else
-                        dict[key] = DateTimeOffset.UtcNow; // default fallback
+                        dict[normalizedKey] = DateTimeOffset.UtcNow; // default fallback
                     break;
                 default:
                     // For string properties (Name, Description, PasswordHash)
-                    dict[key] = string.IsNullOrEmpty(value) ? null : value;
+                    dict[normalizedKey] = string.IsNullOrEmpty(value) ? null : value;
                     break;
             }
         }
@@ -97,6 +100,26 @@ public class RedisRoomRepository : IRoomRepository
             PropertyNameCaseInsensitive = true
         };
         return JsonSerializer.Deserialize<ChatRoom>(json, options);
+    }
+
+    private string NormalizeKey(string key)
+    {
+        // Map common variations to proper property names
+        return key.ToLowerInvariant() switch
+        {
+            "id" => "Id",
+            "name" => "Name",
+            "description" => "Description",
+            "type" => "Type",
+            "maxusers" => "MaxUsers",
+            "createdby" => "CreatedBy",
+            "passwordhash" => "PasswordHash",
+            "currentusers" => "CurrentUsers",
+            "createdat" => "CreatedAt",
+            "lastactiveat" => "LastActiveAt",
+            "updatedat" => "UpdatedAt",
+            _ => key // Return original if no mapping
+        };
     }
 
     #endregion
