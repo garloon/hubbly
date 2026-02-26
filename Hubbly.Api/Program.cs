@@ -273,7 +273,20 @@ public class Program
     private static void ConfigureJwt(IServiceCollection services, IConfiguration configuration)
     {
         var jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>();
-        services.AddSingleton(jwtSettings!);
+        
+        // Get JWT secret from configuration (which can come from environment variables)
+        // Environment variable names: Jwt__Secret or JWT_SECRET
+        var jwtSecret = configuration["Jwt:Secret"]
+                        ?? Environment.GetEnvironmentVariable("JWT_SECRET")
+                        ?? throw new InvalidOperationException(
+                            "JWT secret is not configured. " +
+                            "Set Jwt:Secret in appsettings.json (not recommended) " +
+                            "or JWT_SECRET environment variable (recommended).");
+        
+        // Override the Secret property with the actual secret (since it might be null from config)
+        jwtSettings!.Secret = jwtSecret;
+
+        services.AddSingleton(jwtSettings);
 
         services.AddAuthentication(options =>
         {
@@ -288,9 +301,9 @@ public class Program
                 ValidateAudience = true,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuer = jwtSettings!.Issuer,
+                ValidIssuer = jwtSettings.Issuer,
                 ValidAudience = jwtSettings.Audience,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
                 ClockSkew = TimeSpan.FromMinutes(5)
             };
 
