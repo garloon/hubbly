@@ -3,6 +3,7 @@ using FluentValidation.AspNetCore;
 using Hubbly.Api.Controllers;
 using Hubbly.Api.Hubs;
 using Hubbly.Api.Middleware;
+using Hubbly.Api.Services;
 using Hubbly.Api.Validators;
 using Hubbly.Application.Services;
 using Hubbly.Domain.Events;
@@ -235,6 +236,10 @@ public class Program
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IAvatarValidator, AvatarValidator>();
+
+        // Extracted services for ChatHub (SRP)
+        services.AddSingleton<IPresenceService, PresenceService>();
+        services.AddSingleton<IMessageValidationService, MessageValidationService>();
 
         // Domain Events
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
