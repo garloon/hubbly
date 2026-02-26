@@ -155,14 +155,19 @@ public class RedisRoomRepository : IRoomRepository
         var hash = SerializeRoomToHash(room);
         await _db.HashSetAsync(roomKey, hash);
 
-        // Обновить в sorted set, если комната активна
+        // Обновить в sorted set, если комната активна, иначе удалить из active set
+        var activeRoomsKey = GetActiveRoomsKey(room.Type);
         if (room.IsActive)
         {
-            var activeRoomsKey = GetActiveRoomsKey(room.Type);
             await _db.SortedSetAddAsync(activeRoomsKey, new[] { new SortedSetEntry(room.Id.ToString(), room.LastActiveAt.ToUnixTimeSeconds()) });
         }
+        else
+        {
+            // Удалить из active set если комната стала неактивной
+            await _db.SortedSetRemoveAsync(activeRoomsKey, room.Id.ToString());
+        }
 
-        _logger.LogDebug("Updated room {RoomId} in Redis", room.Id);
+        _logger.LogDebug("Updated room {RoomId} in Redis (IsActive={IsActive})", room.Id, room.IsActive);
     }
 
     public async Task DeleteAsync(Guid roomId)
@@ -215,8 +220,19 @@ public class RedisRoomRepository : IRoomRepository
     public async Task<int> GetUserCountAsync(Guid roomId)
     {
         var roomKey = GetRoomKey(roomId);
-        var currentUsers = await _db.HashGetAsync(roomKey, "currentUsers");
-        return (int)currentUsers;
+        var currentUsers = (int)await _db.HashGetAsync(roomKey, "currentUsers");
+        var membersCount = await _db.SetLengthAsync(GetRoomMembersKey(roomId));
+        
+        // Автокоррекция при значительном расхождении (>2)
+        if (Math.Abs(currentUsers - membersCount) > 2)
+        {
+            _logger.LogWarning("User count mismatch for room {RoomId}: hash={Hash}, set={Set}",
+                roomId, currentUsers, membersCount);
+            // Синхронизируем с реальным количеством
+            await _db.HashSetAsync(roomKey, "currentUsers", membersCount);
+            return (int)membersCount;
+        }
+        return currentUsers;
     }
 
     public async Task AddUserToRoomAsync(Guid roomId, Guid userId)
@@ -279,6 +295,9 @@ public class RedisRoomRepository : IRoomRepository
         var activeRoomsKey = GetActiveRoomsKey(type);
         var roomIds = await _db.SortedSetRangeByRankAsync(activeRoomsKey, 0, -1);
 
+        _logger.LogDebug("GetOptimalRoomAsync: Found {Count} room IDs in active set for type {Type}",
+            roomIds.Length, type);
+
         ChatRoom? bestRoom = null;
         int bestCurrentUsers = -1;
 
@@ -292,6 +311,9 @@ public class RedisRoomRepository : IRoomRepository
                     // Получить текущее количество пользователей
                     var currentUsers = await GetUserCountAsync(roomId);
 
+                    _logger.LogDebug("Room {RoomId}: IsActive={IsActive}, MaxUsers={Max}, CurrentUsers={Current}",
+                        roomId, room.IsActive, room.MaxUsers, currentUsers);
+
                     // Искать комнату с максимальным количеством пользователей, но не полную
                     if (currentUsers < room.MaxUsers && currentUsers > bestCurrentUsers)
                     {
@@ -300,6 +322,17 @@ public class RedisRoomRepository : IRoomRepository
                     }
                 }
             }
+        }
+
+        if (bestRoom != null)
+        {
+            _logger.LogInformation("GetOptimalRoomAsync: Selected room {RoomId} ({RoomName}) with {Users}/{Max}",
+                bestRoom.Id, bestRoom.Name, bestCurrentUsers, bestRoom.MaxUsers);
+        }
+        else
+        {
+            _logger.LogWarning("GetOptimalRoomAsync: No suitable room found for type {Type}, maxUsers={MaxUsers}",
+                type, maxUsers);
         }
 
         return bestRoom;
