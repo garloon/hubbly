@@ -33,6 +33,9 @@ COPY --from=publish /app/publish .
 # Copy wwwroot with 3D models
 COPY --from=build /src/Hubbly.Api/wwwroot ./wwwroot
 
+# Copy Entity Framework migrations
+COPY --from=build /src/Hubbly.Infrastructure/Migrations ./Hubbly.Infrastructure/Migrations
+
 # Expose port
 EXPOSE 5000
 

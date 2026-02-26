@@ -25,4 +25,10 @@
     <ProjectReference Include="..\Hubbly.Application\Hubbly.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Migrations\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
