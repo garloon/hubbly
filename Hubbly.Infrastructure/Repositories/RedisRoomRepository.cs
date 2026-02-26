@@ -15,6 +15,9 @@ public class RedisRoomRepository : IRoomRepository
     private const string ActiveRoomsPrefix = "room:active:";
     private const string RoomMembersPrefix = "room:members:";
     private const string UserRoomPrefix = "user:room:";
+    private const string ConnectionKeyPrefix = "connection:";
+    private const string UserConnectionsPrefix = "user:connections:";
+    private const string OnlineCountKey = "online_users:count";
 
     public RedisRoomRepository(IConnectionMultiplexer redis, ILogger<RedisRoomRepository> logger)
     {
@@ -364,4 +367,111 @@ public class RedisRoomRepository : IRoomRepository
         var rooms = await GetRoomsByCreatedByAsync(userId);
         return rooms.Count();
     }
+
+    #region Connection Tracking (Scale-out Support)
+
+    /// <summary>
+    /// Tracks a new connection in Redis
+    /// </summary>
+    public async Task TrackConnectionAsync(Guid connectionId, Guid userId, Guid roomId)
+    {
+        var connectionKey = $"{ConnectionKeyPrefix}{connectionId}";
+        var userConnectionsKey = $"{UserConnectionsPrefix}{userId}";
+        
+        var connectionInfo = ConnectionInfo.Create(userId, roomId);
+        var json = connectionInfo.ToJson();
+        
+        // Store connection info with TTL (30 minutes)
+        await _db.HashSetAsync(connectionKey, "data", json);
+        await _db.KeyExpireAsync(connectionKey, TimeSpan.FromMinutes(30));
+        
+        // Add to user's connections set
+        await _db.SetAddAsync(userConnectionsKey, connectionId.ToString());
+        await _db.KeyExpireAsync(userConnectionsKey, TimeSpan.FromMinutes(30));
+        
+        // Increment global online count
+        await _db.StringIncrementAsync(OnlineCountKey, 1);
+        
+        _logger.LogDebug("Tracked connection {ConnectionId} for user {UserId} in room {RoomId}",
+            connectionId, userId, roomId);
+    }
+
+    /// <summary>
+    /// Removes a connection from Redis
+    /// </summary>
+    public async Task RemoveConnectionAsync(Guid connectionId)
+    {
+        var connectionKey = $"{ConnectionKeyPrefix}{connectionId}";
+        var connectionData = await _db.HashGetAsync(connectionKey, "data");
+        
+        if (!connectionData.IsNullOrEmpty)
+        {
+            var connectionInfo = ConnectionInfo.FromJson(connectionData);
+            if (connectionInfo != null)
+            {
+                var userConnectionsKey = $"{UserConnectionsPrefix}{connectionInfo.UserId}";
+                
+                // Remove from user's connections set
+                await _db.SetRemoveAsync(userConnectionsKey, connectionId.ToString());
+                
+                // Check if user has other connections
+                var remaining = await _db.SetLengthAsync(userConnectionsKey);
+                if (remaining == 0)
+                {
+                    // No more connections for this user, decrement global count
+                    await _db.KeyDeleteAsync(userConnectionsKey);
+                    await _db.StringDecrementAsync(OnlineCountKey, 1);
+                }
+            }
+        }
+        
+        // Delete connection key
+        await _db.KeyDeleteAsync(connectionKey);
+        
+        _logger.LogDebug("Removed connection {ConnectionId}", connectionId);
+    }
+
+    /// <summary>
+    /// Gets user ID by connection ID
+    /// </summary>
+    public async Task<Guid?> GetUserIdByConnectionAsync(Guid connectionId)
+    {
+        var connectionKey = $"{ConnectionKeyPrefix}{connectionId}";
+        var data = await _db.HashGetAsync(connectionKey, "data");
+        
+        if (data.IsNullOrEmpty) return null;
+        
+        var connectionInfo = ConnectionInfo.FromJson(data);
+        return connectionInfo?.UserId;
+    }
+
+    /// <summary>
+    /// Gets all connection IDs for a user
+    /// </summary>
+    public async Task<IEnumerable<Guid>> GetConnectionIdsByUserIdAsync(Guid userId)
+    {
+        var userConnectionsKey = $"{UserConnectionsPrefix}{userId}";
+        var connectionIds = await _db.SetMembersAsync(userConnectionsKey);
+        
+        var result = new List<Guid>();
+        foreach (var id in connectionIds)
+        {
+            if (Guid.TryParse(id, out var guid))
+            {
+                result.Add(guid);
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Gets total online count across all rooms
+    /// </summary>
+    public async Task<int> GetTotalOnlineCountAsync()
+    {
+        var count = await _db.StringGetAsync(OnlineCountKey);
+        return (int)count;
+    }
+
+    #endregion
 }

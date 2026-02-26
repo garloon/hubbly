@@ -319,4 +319,69 @@ public class CompositeRoomRepository : IRoomRepository
             return await _dbRepository.GetOnlineUserIdsInRoomAsync(roomId);
         }
     }
+
+    public async Task TrackConnectionAsync(Guid connectionId, Guid userId, Guid roomId)
+    {
+        try
+        {
+            await _redisRepository.TrackConnectionAsync(connectionId, userId, roomId);
+        }
+        catch (RedisConnectionException ex)
+        {
+            _logger.LogError(ex, "Redis connection error in TrackConnectionAsync, falling back to DB");
+            await _dbRepository.TrackConnectionAsync(connectionId, userId, roomId);
+        }
+    }
+
+    public async Task RemoveConnectionAsync(Guid connectionId)
+    {
+        try
+        {
+            await _redisRepository.RemoveConnectionAsync(connectionId);
+        }
+        catch (RedisConnectionException ex)
+        {
+            _logger.LogError(ex, "Redis connection error in RemoveConnectionAsync, falling back to DB");
+            await _dbRepository.RemoveConnectionAsync(connectionId);
+        }
+    }
+
+    public async Task<Guid?> GetUserIdByConnectionAsync(Guid connectionId)
+    {
+        try
+        {
+            return await _redisRepository.GetUserIdByConnectionAsync(connectionId);
+        }
+        catch (RedisConnectionException ex)
+        {
+            _logger.LogError(ex, "Redis connection error in GetUserIdByConnectionAsync, falling back to DB");
+            return await _dbRepository.GetUserIdByConnectionAsync(connectionId);
+        }
+    }
+
+    public async Task<IEnumerable<Guid>> GetConnectionIdsByUserIdAsync(Guid userId)
+    {
+        try
+        {
+            return await _redisRepository.GetConnectionIdsByUserIdAsync(userId);
+        }
+        catch (RedisConnectionException ex)
+        {
+            _logger.LogError(ex, "Redis connection error in GetConnectionIdsByUserIdAsync, falling back to DB");
+            return await _dbRepository.GetConnectionIdsByUserIdAsync(userId);
+        }
+    }
+
+    public async Task<int> GetTotalOnlineCountAsync()
+    {
+        try
+        {
+            return await _redisRepository.GetTotalOnlineCountAsync();
+        }
+        catch (RedisConnectionException ex)
+        {
+            _logger.LogError(ex, "Redis connection error in GetTotalOnlineCountAsync, falling back to DB");
+            return await _dbRepository.GetTotalOnlineCountAsync();
+        }
+    }
 }

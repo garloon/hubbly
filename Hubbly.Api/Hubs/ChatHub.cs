@@ -4,7 +4,6 @@ using Hubbly.Domain.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
-using System.Collections.Concurrent;
 
 namespace Hubbly.Api.Hubs;
 
@@ -19,7 +18,6 @@ public class ChatHub : Hub
     private readonly ILogger<ChatHub> _logger;
     private readonly IMemoryCache _nonceCache;
 
-    private static readonly ConcurrentDictionary<string, ConnectedUser> _connectedUsers = new();
     private static readonly TimeSpan NonceLifetime = TimeSpan.FromMinutes(2);
 
     public ChatHub(
@@ -103,19 +101,9 @@ public class ChatHub : Hub
 
                 // Update LastRoomId for the user (already updated in JoinRoomAsync/AssignGuestToRoomAsync)
 
-                // Save connected user information
-                var connectedUser = new ConnectedUser
-                {
-                    UserId = userId,
-                    Nickname = user.Nickname,
-                    AvatarConfigJson = user.AvatarConfigJson,
-                    ConnectionId = connectionId,
-                    ConnectedAt = DateTimeOffset.UtcNow,
-                    RoomId = room.Id,
-                    RoomName = room.Name
-                };
-
-                _connectedUsers[userId.ToString()] = connectedUser;
+                // Track connection in Redis (replaces _connectedUsers)
+                await _roomRepository.TrackConnectionAsync(Guid.Parse(connectionId), userId, room.Id);
+                
                 await Groups.AddToGroupAsync(connectionId, room.Id.ToString());
 
                 // Send room information
@@ -153,7 +141,11 @@ public class ChatHub : Hub
             var userIdClaim = Context.User?.FindFirst("userId");
             if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
             {
-                await HandleDisconnectAsync(userId);
+                // Remove connection from Redis first
+                await _roomRepository.RemoveConnectionAsync(Guid.Parse(connectionId));
+                
+                // Then handle disconnect logic (notify others, leave room)
+                await HandleDisconnectAsync(userId, connectionId);
             }
 
             await base.OnDisconnectedAsync(exception);
@@ -295,11 +287,11 @@ public class ChatHub : Hub
         }
     }
 
-    public Task<int> GetOnlineCount()
+    public async Task<int> GetOnlineCount()
     {
-        var count = _connectedUsers.Count;
+        var count = await _roomRepository.GetTotalOnlineCountAsync();
         _logger.LogDebug("Online count requested: {Count}", count);
-        return Task.FromResult(count);
+        return count;
     }
 
     #endregion
@@ -339,10 +331,19 @@ public class ChatHub : Hub
 
     private async Task CleanupExistingConnectionAsync(Guid userId)
     {
-        if (_connectedUsers.TryGetValue(userId.ToString(), out var existingUser))
+        // Get all connection IDs for this user from Redis
+        var existingConnectionIds = await _roomRepository.GetConnectionIdsByUserIdAsync(userId);
+        
+        if (existingConnectionIds.Any())
         {
-            _logger.LogInformation("User {UserId} already connected, cleaning up old connection", userId);
-            await HandleDisconnectAsync(userId);
+            _logger.LogInformation("User {UserId} has {Count} existing connections, cleaning up",
+                userId, existingConnectionIds.Count());
+            
+            // Remove all old connections from Redis
+            foreach (var connectionId in existingConnectionIds)
+            {
+                await _roomRepository.RemoveConnectionAsync(connectionId);
+            }
         }
     }
 
@@ -397,27 +398,34 @@ public class ChatHub : Hub
         });
     }
 
-    private async Task HandleDisconnectAsync(Guid userId)
+    private async Task HandleDisconnectAsync(Guid userId, string connectionId)
     {
         try
         {
-            _connectedUsers.TryRemove(userId.ToString(), out var disconnectedUser);
+            // Connection already removed from Redis in OnDisconnectedAsync
+            // Just handle room leaving and notifications
 
             var room = await _roomService.GetRoomByUserIdAsync(userId);
             await _roomService.RemoveUserFromRoomAsync(userId);
 
             if (room != null)
             {
-                await Clients.OthersInGroup(room.Id.ToString()).SendAsync("UserLeft", new UserLeftData
+                // Check if user has any other active connections
+                var userConnectionIds = await _roomRepository.GetConnectionIdsByUserIdAsync(userId);
+                
+                // Only send UserLeft if this was the user's last connection overall
+                if (!userConnectionIds.Any())
                 {
-                    UserId = userId.ToString(),
-                    Nickname = disconnectedUser?.Nickname ?? "User",
-                    LeftAt = DateTimeOffset.UtcNow
-                });
+                    // Need to get nickname from database since we don't store it in memory
+                    var user = await _userRepository.GetByIdAsync(userId);
+                    var nickname = user?.Nickname ?? "User";
 
-                if (!string.IsNullOrEmpty(Context.ConnectionId))
-                {
-                    await Groups.RemoveFromGroupAsync(Context.ConnectionId, room.Id.ToString());
+                    await Clients.OthersInGroup(room.Id.ToString()).SendAsync("UserLeft", new UserLeftData
+                    {
+                        UserId = userId.ToString(),
+                        Nickname = nickname,
+                        LeftAt = DateTimeOffset.UtcNow
+                    });
                 }
 
                 _logger.LogInformation("User {UserId} left room {RoomName}", userId, room.Name);

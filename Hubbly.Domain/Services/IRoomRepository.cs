@@ -32,4 +32,11 @@ public interface IRoomRepository
     Task<ChatRoom?> GetOptimalRoomAsync(RoomType type, int maxUsers);
     Task<IEnumerable<ChatRoom>> GetRoomsByCreatedByAsync(Guid userId);
     Task<int> GetUserRoomCountAsync(Guid userId);
+
+    // Connection tracking (for scale-out)
+    Task TrackConnectionAsync(Guid connectionId, Guid userId, Guid roomId);
+    Task RemoveConnectionAsync(Guid connectionId);
+    Task<Guid?> GetUserIdByConnectionAsync(Guid connectionId);
+    Task<IEnumerable<Guid>> GetConnectionIdsByUserIdAsync(Guid userId);
+    Task<int> GetTotalOnlineCountAsync();
 }

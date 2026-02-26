@@ -6,10 +6,17 @@ using Microsoft.Extensions.Logging;
 
 namespace Hubbly.Infrastructure.Repositories;
 
+using System.Collections.Concurrent;
+
 public class RoomDbRepository : IRoomRepository
 {
     private readonly AppDbContext _context;
     private readonly ILogger<RoomDbRepository> _logger;
+    
+    // Fallback in-memory connection tracking (only for single-instance mode)
+    private static readonly ConcurrentDictionary<Guid, ConnectionInfo> _connections = new();
+    private static readonly ConcurrentDictionary<Guid, HashSet<Guid>> _userConnections = new();
+    private static int _onlineCount = 0;
 
     public RoomDbRepository(AppDbContext context, ILogger<RoomDbRepository> logger)
     {
@@ -176,4 +183,88 @@ public class RoomDbRepository : IRoomRepository
         return await _context.ChatRooms
             .CountAsync(r => r.CreatedBy == userId);
     }
+
+    #region Connection Tracking (Fallback for Single-Instance Mode)
+
+    /// <summary>
+    /// Tracks a connection in memory (fallback when Redis is unavailable)
+    /// </summary>
+    public async Task TrackConnectionAsync(Guid connectionId, Guid userId, Guid roomId)
+    {
+        var connectionInfo = ConnectionInfo.Create(userId, roomId);
+        
+        _connections[connectionId] = connectionInfo;
+        
+        if (!_userConnections.ContainsKey(userId))
+            _userConnections[userId] = new HashSet<Guid>();
+        
+        _userConnections[userId].Add(connectionId);
+        
+        // Update online count
+        Interlocked.Increment(ref _onlineCount);
+        
+        _logger.LogDebug("Tracked connection {ConnectionId} for user {UserId} in room {RoomId} (DB fallback)",
+            connectionId, userId, roomId);
+        
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Removes a connection from memory (fallback when Redis is unavailable)
+    /// </summary>
+    public async Task RemoveConnectionAsync(Guid connectionId)
+    {
+        if (_connections.TryRemove(connectionId, out var connectionInfo))
+        {
+            if (_userConnections.TryGetValue(connectionInfo.UserId, out var userConns))
+            {
+                userConns.Remove(connectionId);
+                if (userConns.Count == 0)
+                {
+                    _userConnections.TryRemove(connectionInfo.UserId, out _);
+                    Interlocked.Decrement(ref _onlineCount);
+                }
+            }
+            
+            _logger.LogDebug("Removed connection {ConnectionId} (DB fallback)", connectionId);
+        }
+        
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Gets user ID by connection ID (fallback)
+    /// </summary>
+    public Task<Guid?> GetUserIdByConnectionAsync(Guid connectionId)
+    {
+        if (_connections.TryGetValue(connectionId, out var connectionInfo))
+        {
+            return Task.FromResult<Guid?>(connectionInfo.UserId);
+        }
+        
+        return Task.FromResult<Guid?>(null);
+    }
+
+    /// <summary>
+    /// Gets all connection IDs for a user (fallback)
+    /// </summary>
+    public async Task<IEnumerable<Guid>> GetConnectionIdsByUserIdAsync(Guid userId)
+    {
+        if (_userConnections.TryGetValue(userId, out var connections))
+        {
+            return await Task.FromResult(connections.ToList());
+        }
+        
+        return await Task.FromResult(Enumerable.Empty<Guid>());
+    }
+
+    /// <summary>
+    /// Gets total online count (fallback)
+    /// </summary>
+    public async Task<int> GetTotalOnlineCountAsync()
+    {
+        return await Task.FromResult(_onlineCount);
+    }
+
+    #endregion
 }
