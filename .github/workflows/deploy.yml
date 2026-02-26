@@ -107,9 +107,9 @@ jobs:
           echo "🔐 Logging in to Docker Hub..."
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
           
-          # Останавливаем старые контейнеры
-          echo "🛑 Stopping old containers..."
-          docker-compose down 2>/dev/null || true
+          # Останавливаем старые контейнеры и удаляем образы
+          echo "🛑 Stopping old containers and removing images..."
+          docker-compose down --rmi all 2>/dev/null || true
           
           # Пуллим свежий образ
           echo "📥 Pulling latest image..."
