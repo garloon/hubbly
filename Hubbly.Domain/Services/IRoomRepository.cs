@@ -34,9 +34,9 @@ public interface IRoomRepository
     Task<int> GetUserRoomCountAsync(Guid userId);
 
     // Connection tracking (for scale-out)
-    Task TrackConnectionAsync(Guid connectionId, Guid userId, Guid roomId);
-    Task RemoveConnectionAsync(Guid connectionId);
-    Task<Guid?> GetUserIdByConnectionAsync(Guid connectionId);
-    Task<IEnumerable<Guid>> GetConnectionIdsByUserIdAsync(Guid userId);
+    Task TrackConnectionAsync(string connectionId, Guid userId, Guid roomId);
+    Task RemoveConnectionAsync(string connectionId);
+    Task<Guid?> GetUserIdByConnectionAsync(string connectionId);
+    Task<IEnumerable<string>> GetConnectionIdsByUserIdAsync(Guid userId);
     Task<int> GetTotalOnlineCountAsync();
 }

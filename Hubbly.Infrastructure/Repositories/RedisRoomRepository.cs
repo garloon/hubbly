@@ -373,7 +373,7 @@ public class RedisRoomRepository : IRoomRepository
     /// <summary>
     /// Tracks a new connection in Redis
     /// </summary>
-    public async Task TrackConnectionAsync(Guid connectionId, Guid userId, Guid roomId)
+    public async Task TrackConnectionAsync(string connectionId, Guid userId, Guid roomId)
     {
         var connectionKey = $"{ConnectionKeyPrefix}{connectionId}";
         var userConnectionsKey = $"{UserConnectionsPrefix}{userId}";
@@ -386,7 +386,7 @@ public class RedisRoomRepository : IRoomRepository
         await _db.KeyExpireAsync(connectionKey, TimeSpan.FromMinutes(30));
         
         // Add to user's connections set
-        await _db.SetAddAsync(userConnectionsKey, connectionId.ToString());
+        await _db.SetAddAsync(userConnectionsKey, connectionId);
         await _db.KeyExpireAsync(userConnectionsKey, TimeSpan.FromMinutes(30));
         
         // Increment global online count
@@ -399,7 +399,7 @@ public class RedisRoomRepository : IRoomRepository
     /// <summary>
     /// Removes a connection from Redis
     /// </summary>
-    public async Task RemoveConnectionAsync(Guid connectionId)
+    public async Task RemoveConnectionAsync(string connectionId)
     {
         var connectionKey = $"{ConnectionKeyPrefix}{connectionId}";
         var connectionData = await _db.HashGetAsync(connectionKey, "data");
@@ -412,7 +412,7 @@ public class RedisRoomRepository : IRoomRepository
                 var userConnectionsKey = $"{UserConnectionsPrefix}{connectionInfo.UserId}";
                 
                 // Remove from user's connections set
-                await _db.SetRemoveAsync(userConnectionsKey, connectionId.ToString());
+                await _db.SetRemoveAsync(userConnectionsKey, connectionId);
                 
                 // Check if user has other connections
                 var remaining = await _db.SetLengthAsync(userConnectionsKey);
@@ -434,7 +434,7 @@ public class RedisRoomRepository : IRoomRepository
     /// <summary>
     /// Gets user ID by connection ID
     /// </summary>
-    public async Task<Guid?> GetUserIdByConnectionAsync(Guid connectionId)
+    public async Task<Guid?> GetUserIdByConnectionAsync(string connectionId)
     {
         var connectionKey = $"{ConnectionKeyPrefix}{connectionId}";
         var data = await _db.HashGetAsync(connectionKey, "data");
@@ -448,20 +448,12 @@ public class RedisRoomRepository : IRoomRepository
     /// <summary>
     /// Gets all connection IDs for a user
     /// </summary>
-    public async Task<IEnumerable<Guid>> GetConnectionIdsByUserIdAsync(Guid userId)
+    public async Task<IEnumerable<string>> GetConnectionIdsByUserIdAsync(Guid userId)
     {
         var userConnectionsKey = $"{UserConnectionsPrefix}{userId}";
         var connectionIds = await _db.SetMembersAsync(userConnectionsKey);
         
-        var result = new List<Guid>();
-        foreach (var id in connectionIds)
-        {
-            if (Guid.TryParse(id, out var guid))
-            {
-                result.Add(guid);
-            }
-        }
-        return result;
+        return connectionIds.Select(id => id.ToString()).Where(id => !string.IsNullOrEmpty(id));
     }
 
     /// <summary>

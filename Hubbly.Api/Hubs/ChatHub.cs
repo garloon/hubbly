@@ -102,7 +102,7 @@ public class ChatHub : Hub
                 // Update LastRoomId for the user (already updated in JoinRoomAsync/AssignGuestToRoomAsync)
 
                 // Track connection in Redis (replaces _connectedUsers)
-                await _roomRepository.TrackConnectionAsync(Guid.Parse(connectionId), userId, room.Id);
+                await _roomRepository.TrackConnectionAsync(connectionId, userId, room.Id);
                 
                 await Groups.AddToGroupAsync(connectionId, room.Id.ToString());
 
@@ -142,7 +142,7 @@ public class ChatHub : Hub
             if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
             {
                 // Remove connection from Redis first
-                await _roomRepository.RemoveConnectionAsync(Guid.Parse(connectionId));
+                await _roomRepository.RemoveConnectionAsync(connectionId);
                 
                 // Then handle disconnect logic (notify others, leave room)
                 await HandleDisconnectAsync(userId, connectionId);

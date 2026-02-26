@@ -14,8 +14,8 @@ public class RoomDbRepository : IRoomRepository
     private readonly ILogger<RoomDbRepository> _logger;
     
     // Fallback in-memory connection tracking (only for single-instance mode)
-    private static readonly ConcurrentDictionary<Guid, ConnectionInfo> _connections = new();
-    private static readonly ConcurrentDictionary<Guid, HashSet<Guid>> _userConnections = new();
+    private static readonly ConcurrentDictionary<string, ConnectionInfo> _connections = new();
+    private static readonly ConcurrentDictionary<Guid, HashSet<string>> _userConnections = new();
     private static int _onlineCount = 0;
 
     public RoomDbRepository(AppDbContext context, ILogger<RoomDbRepository> logger)
@@ -189,14 +189,14 @@ public class RoomDbRepository : IRoomRepository
     /// <summary>
     /// Tracks a connection in memory (fallback when Redis is unavailable)
     /// </summary>
-    public async Task TrackConnectionAsync(Guid connectionId, Guid userId, Guid roomId)
+    public async Task TrackConnectionAsync(string connectionId, Guid userId, Guid roomId)
     {
         var connectionInfo = ConnectionInfo.Create(userId, roomId);
         
         _connections[connectionId] = connectionInfo;
         
         if (!_userConnections.ContainsKey(userId))
-            _userConnections[userId] = new HashSet<Guid>();
+            _userConnections[userId] = new HashSet<string>();
         
         _userConnections[userId].Add(connectionId);
         
@@ -212,7 +212,7 @@ public class RoomDbRepository : IRoomRepository
     /// <summary>
     /// Removes a connection from memory (fallback when Redis is unavailable)
     /// </summary>
-    public async Task RemoveConnectionAsync(Guid connectionId)
+    public async Task RemoveConnectionAsync(string connectionId)
     {
         if (_connections.TryRemove(connectionId, out var connectionInfo))
         {
@@ -235,7 +235,7 @@ public class RoomDbRepository : IRoomRepository
     /// <summary>
     /// Gets user ID by connection ID (fallback)
     /// </summary>
-    public Task<Guid?> GetUserIdByConnectionAsync(Guid connectionId)
+    public Task<Guid?> GetUserIdByConnectionAsync(string connectionId)
     {
         if (_connections.TryGetValue(connectionId, out var connectionInfo))
         {
@@ -248,14 +248,14 @@ public class RoomDbRepository : IRoomRepository
     /// <summary>
     /// Gets all connection IDs for a user (fallback)
     /// </summary>
-    public async Task<IEnumerable<Guid>> GetConnectionIdsByUserIdAsync(Guid userId)
+    public async Task<IEnumerable<string>> GetConnectionIdsByUserIdAsync(Guid userId)
     {
         if (_userConnections.TryGetValue(userId, out var connections))
         {
             return await Task.FromResult(connections.ToList());
         }
         
-        return await Task.FromResult(Enumerable.Empty<Guid>());
+        return await Task.FromResult(Enumerable.Empty<string>());
     }
 
     /// <summary>

@@ -320,7 +320,7 @@ public class CompositeRoomRepository : IRoomRepository
         }
     }
 
-    public async Task TrackConnectionAsync(Guid connectionId, Guid userId, Guid roomId)
+    public async Task TrackConnectionAsync(string connectionId, Guid userId, Guid roomId)
     {
         try
         {
@@ -333,7 +333,7 @@ public class CompositeRoomRepository : IRoomRepository
         }
     }
 
-    public async Task RemoveConnectionAsync(Guid connectionId)
+    public async Task RemoveConnectionAsync(string connectionId)
     {
         try
         {
@@ -346,7 +346,7 @@ public class CompositeRoomRepository : IRoomRepository
         }
     }
 
-    public async Task<Guid?> GetUserIdByConnectionAsync(Guid connectionId)
+    public async Task<Guid?> GetUserIdByConnectionAsync(string connectionId)
     {
         try
         {
@@ -359,7 +359,7 @@ public class CompositeRoomRepository : IRoomRepository
         }
     }
 
-    public async Task<IEnumerable<Guid>> GetConnectionIdsByUserIdAsync(Guid userId)
+    public async Task<IEnumerable<string>> GetConnectionIdsByUserIdAsync(Guid userId)
     {
         try
         {
